@@ -1,0 +1,34 @@
+enabled = true
+
+# 全局默认轮询间隔，单条 feed 可以通过 #rss interval 单独覆盖。
+default_interval_seconds = 10
+
+# 单 feed 最小轮询间隔。
+min_interval_seconds = 5
+
+# 单次 HTTP 请求超时。
+request_timeout_seconds = 30
+
+# 一次轮询单条 feed 最多推送的条目数，超过的部分仅记入已读不推送。
+max_items_per_push = 3
+
+# 推送中 description 最大字符数，超过会被截断。
+max_description_length = 200
+
+# #rss latest <id> [tag] [n=N] 中 N 的上限。
+latest_max_n = 5
+
+# 是否在推送时附第一张图片。
+include_image = true
+
+# 是否允许订阅内网/回环地址（默认拒绝，防 SSRF）。
+allow_private_urls = false
+
+# HTTP User-Agent。
+user_agent = "Shirobot-Rss/1.0"
+
+# 每个 feed 已推送 GUID 的最大保留数量（环形）。
+last_seen_capacity = 100
+
+# 失败退避的最大间隔。
+backoff_max_seconds = 3600

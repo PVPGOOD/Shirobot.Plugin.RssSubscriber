@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <AssemblyName>Shirobot.Plugin.RssSubscriber</AssemblyName>
+        <RootNamespace>Shirobot.Plugin.RssSubscriber</RootNamespace>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <HostProjectRoot>C:\Users\JustMe\RiderProjects\ShiroBot\ShiroBot\</HostProjectRoot>
+        <HostExe>$(HostProjectRoot)bin\Debug\$(TargetFramework)\ShiroBot.exe</HostExe>
+        <HostPluginDir>$(HostProjectRoot)bin\Debug\$(TargetFramework)\plugins\$(AssemblyName)\</HostPluginDir>
+        <Configurations>Debug;DebugPlugin;DebugAdapter;DebugAll;Release</Configurations>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+        <StartAction>Program</StartAction>
+        <StartProgram>$(HostExe)</StartProgram>
+        <StartWorkingDirectory>$([System.IO.Path]::GetDirectoryName('$(HostExe)'))</StartWorkingDirectory>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="C:\Users\JustMe\RiderProjects\ShiroBot\ShiroBot.SDK\ShiroBot.SDK.csproj" />
+        <Content Include="Assets\config.toml">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <TargetPath>config.toml</TargetPath>
+        </Content>
+    </ItemGroup>
+
+    <Target Name="CopyPluginToHost"
+            AfterTargets="Build"
+            Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='DebugPlugin' or '$(Configuration)'=='DebugAll'">
+        <MakeDir Directories="$(HostPluginDir)" />
+
+        <ItemGroup>
+            <PluginDebugOutput Include="$(TargetDir)**\*"
+                               Exclude="$(TargetDir)ShiroBot.SDK.dll;$(TargetDir)ShiroBot.SDK.pdb;$(TargetDir)ShiroBot.Model.dll;$(TargetDir)ShiroBot.Model.pdb" />
+        </ItemGroup>
+
+        <Copy SourceFiles="@(PluginDebugOutput)"
+              DestinationFiles="@(PluginDebugOutput->'$(HostPluginDir)%(RecursiveDir)%(Filename)%(Extension)')"
+              SkipUnchangedFiles="true" />
+    </Target>
+
+</Project>
