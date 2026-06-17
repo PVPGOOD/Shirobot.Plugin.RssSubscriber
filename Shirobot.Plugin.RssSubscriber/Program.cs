@@ -11,6 +11,12 @@ using ShiroBot.SDK.Plugin;
 
 namespace Shirobot.Plugin.RssSubscriber;
 
+[BotPlugin(
+    "Shirobot.Plugin.RssSubscriber",
+    Name = "Shirobot.Plugin.RssSubscriber",
+    Version = "1.0.0",
+    Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。",
+    Category = PluginCategory.Integration)]
 public sealed class ShirobotPlugin : PluginBase
 {
     private const string CommandPrefix = "#rss";
@@ -28,13 +34,6 @@ public sealed class ShirobotPlugin : PluginBase
     private readonly object _reloadLock = new();
 
     public override string Name => "Shirobot.Plugin.RssSubscriber";
-
-    public override BotComponentMetadata Metadata { get; } = new()
-    {
-        Name = "Shirobot.Plugin.RssSubscriber",
-        Version = "1.0.0",
-        Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。"
-    };
 
     protected override Task LoadAsync()
     {

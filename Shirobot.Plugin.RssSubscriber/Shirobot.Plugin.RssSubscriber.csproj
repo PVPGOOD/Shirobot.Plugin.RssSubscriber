@@ -11,6 +11,7 @@
         <HostExe>$(HostProjectRoot)bin\Debug\$(TargetFramework)\ShiroBot.exe</HostExe>
         <HostPluginDir>$(HostProjectRoot)bin\Debug\$(TargetFramework)\plugins\$(AssemblyName)\</HostPluginDir>
         <Configurations>Debug;DebugPlugin;DebugAdapter;DebugAll;Release</Configurations>
+        <CopyPluginToHost>true</CopyPluginToHost>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)'=='Debug'">
@@ -29,7 +30,7 @@
 
     <Target Name="CopyPluginToHost"
             AfterTargets="Build"
-            Condition="'$(Configuration)'=='Debug' or '$(Configuration)'=='DebugPlugin' or '$(Configuration)'=='DebugAll'">
+            Condition="'$(CopyPluginToHost)'!='false' and ('$(Configuration)'=='Debug' or '$(Configuration)'=='DebugPlugin' or '$(Configuration)'=='DebugAll')">
         <MakeDir Directories="$(HostPluginDir)" />
 
         <ItemGroup>
