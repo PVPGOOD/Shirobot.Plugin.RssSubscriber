@@ -292,11 +292,31 @@ public sealed class RssCommandHandler
 
         var url = source;
         var explicitId = tokens.Length == 3 ? FeedIdGenerator.Sanitize(tokens[2]) : null;
+        var githubDefaultFeedId = default(string?);
+        var normalizedFromGitHubRepository = FeedIdGenerator.TryNormalizeGitHubRepositoryUrl(url, out var normalizedUrl, out githubDefaultFeedId);
+        if (normalizedFromGitHubRepository)
+        {
+            url = normalizedUrl;
+        }
 
         var config = _configAccessor();
         if (!UrlSafetyGuard.IsAllowed(url, config.AllowPrivateUrls, out var safetyReason))
         {
             await ctx.ReplyMentionAsync(true, "[RSS] " + safetyReason, null);
+            return;
+        }
+
+        FeedFetchResult validationResult;
+        try
+        {
+            validationResult = await _scheduler.FetchUrlAsync(url, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            BotLog.Warning($"[Rss] add 验证 RSS 源失败 url={url}: {ex.GetType().Name}: {ex.Message}");
+            await ctx.ReplyMentionAsync(true,
+                $"[RSS] 该 URL 不是有效的 RSS/Atom 源或当前无法访问，请重新添加有效订阅源。\nURL: {url}\n原因: {ex.Message}",
+                null);
             return;
         }
 
@@ -313,6 +333,10 @@ public sealed class RssCommandHandler
             }
 
             var added = _subscriptions.Add(ctx.Scope, existingByUrl.Id);
+            if (!string.IsNullOrWhiteSpace(validationResult.FeedTitle))
+            {
+                _feeds.SetDisplayName(existingByUrl.Id, validationResult.FeedTitle);
+            }
             _scheduler.PersistSync();
             var msg = added
                 ? $"[RSS] 已订阅已有 feed: {existingByUrl.Id}"
@@ -336,24 +360,30 @@ public sealed class RssCommandHandler
         }
         else
         {
-            var baseId = FeedIdGenerator.Derive(url);
+            var baseId = !string.IsNullOrWhiteSpace(githubDefaultFeedId)
+                ? githubDefaultFeedId
+                : FeedIdGenerator.Derive(url);
             feedId = FeedIdGenerator.EnsureUnique(baseId, id => _feeds.Exists(id));
         }
 
         _feeds.Add(feedId, url, ctx.Scope.Format());
+        if (!string.IsNullOrWhiteSpace(validationResult.FeedTitle))
+        {
+            _feeds.SetDisplayName(feedId, validationResult.FeedTitle);
+        }
+        _feeds.UpdateAfterFetch(
+            feedId,
+            validationResult.Items.Select(i => i.Id).Where(id => !string.IsNullOrWhiteSpace(id)),
+            config.LastSeenCapacity);
         _subscriptions.Add(ctx.Scope, feedId);
         _scheduler.PersistSync();
 
-        await ctx.ReplyMentionAsync(true, $"[RSS] 已添加并订阅 feed_id={feedId}，正在拉取基线，下次新增条目将推送到本会话。", null);
-
-        try
-        {
-            await _scheduler.PrimeBaselineAsync(feedId, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            BotLog.Warning($"[Rss] 拉取基线失败 feed={feedId}: {ex.GetType().Name}: {ex.Message}");
-        }
+        var normalizeMessage = normalizedFromGitHubRepository
+            ? $"\n已自动转换 GitHub 仓库地址为: {url}"
+            : string.Empty;
+        await ctx.ReplyMentionAsync(true,
+            $"[RSS] 已添加并订阅 feed_id={feedId}，已验证 RSS/Atom 源并记录 {validationResult.Items.Count} 条历史，下次新增条目将推送到本会话。{normalizeMessage}",
+            null);
     }
 
     private async Task RemoveAsync(string[] tokens, CommandContext ctx)

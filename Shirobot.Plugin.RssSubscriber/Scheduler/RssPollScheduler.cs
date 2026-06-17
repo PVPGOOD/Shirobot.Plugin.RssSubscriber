@@ -87,6 +87,9 @@ public sealed class RssPollScheduler : IDisposable
     public Task PrimeBaselineAsync(string feedId, CancellationToken cancellationToken) =>
         FetchOnceAsync(feedId, baselineMode: true, force: true, cancellationToken);
 
+    public Task<FeedFetchResult> FetchUrlAsync(string url, CancellationToken cancellationToken) =>
+        _fetcher.FetchAsync(url, cancellationToken);
+
     public Task<FeedFetchResult?> FetchOnDemandAsync(string feedId, CancellationToken cancellationToken) =>
         FetchOnDemandInternalAsync(feedId, cancellationToken);
 

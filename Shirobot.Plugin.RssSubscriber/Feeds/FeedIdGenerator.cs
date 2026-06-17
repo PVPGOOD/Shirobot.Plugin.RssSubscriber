@@ -19,6 +19,43 @@ public static class FeedIdGenerator
         "ne.jp", "ac.jp", "or.jp", "ac.uk", "gov.uk"
     };
 
+    public static bool TryNormalizeGitHubRepositoryUrl(string url, out string normalizedUrl, out string? defaultFeedId)
+    {
+        normalizedUrl = url;
+        defaultFeedId = null;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var segments = uri.AbsolutePath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 2)
+        {
+            return false;
+        }
+
+        var owner = segments[0];
+        var repository = segments[1];
+        if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(repository) ||
+            repository.EndsWith(".atom", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var builder = new UriBuilder(uri.Scheme, uri.Host)
+        {
+            Path = $"/{owner}/{repository}/commits.atom",
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+        normalizedUrl = builder.Uri.ToString();
+        defaultFeedId = Sanitize(owner);
+        return true;
+    }
+
     public static string Derive(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
