@@ -47,17 +47,22 @@ jobs:
         run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts=
 
       - name: Publish plugin
-        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts= --output artifacts/plugin -v:minimal
+        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts= --output artifacts/publish -v:minimal
 
       - name: Verify package layout
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $publishRoot = Join-Path $PWD "artifacts/publish"
           $packageRoot = Join-Path $PWD "artifacts/plugin"
+          New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
           foreach ($name in @("Shirobot.Plugin.RssSubscriber.dll", "config.toml")) {
-            if (-not (Test-Path (Join-Path $packageRoot $name))) {
+            $source = Join-Path $publishRoot $name
+            if (-not (Test-Path $source)) {
               throw "Missing expected package file: $name"
             }
+            Copy-Item -LiteralPath $source -Destination $packageRoot
           }
 
           $sharedNames = @("ShiroBot.SDK.dll", "ShiroBot.Model.QQ.dll")
@@ -66,9 +71,14 @@ jobs:
             throw "Host shared assemblies must not be packaged: $($sharedAssemblies.Name -join ', ')"
           }
 
+          $packageFiles = @(Get-ChildItem $packageRoot -Recurse -File)
+          if ($packageFiles.Count -ne 2) {
+            throw "Plugin artifact must contain only the DLL and config.toml. Found: $($packageFiles.Name -join ', ')"
+          }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Shirobot.Plugin.RssSubscriber
           if-no-files-found: error
-          path: Shirobot.Plugin.RssSubscriber/artifacts/plugin/**
+          path: Shirobot.Plugin.RssSubscriber/artifacts/plugin/*
