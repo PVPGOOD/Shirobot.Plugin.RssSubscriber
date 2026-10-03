@@ -1,0 +1,33 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.X.PostCard">
+  <Border Width="920" Background="White" CornerRadius="22" Padding="34,34,34,64" BoxShadow="0 6 22 0 #081E293B">
+    <StackPanel Spacing="24">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+          <Border Width="44" Height="44" CornerRadius="12" Background="#F1F5F9">
+            <Path Data="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                  Fill="#475569" Stretch="Uniform" Width="19" Height="19"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Grid.Column="1" Text="X / Twitter" FontSize="20" FontWeight="Bold" Foreground="#111827"
+                     VerticalAlignment="Center" />
+        </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="20" VerticalAlignment="Center">
+          <Border Width="96" Height="96" CornerRadius="48" Background="#E2E8F0"
+                  ClipToBounds="True" IsVisible="{Binding HasAvatar}">
+            <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
+          </Border>
+          <TextBlock Text="{Binding FeedName}" FontSize="23" FontWeight="Bold" Foreground="#1E293B"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="{Binding Title}" FontSize="44" FontWeight="SemiBold" Foreground="#1E293B"
+                   TextWrapping="Wrap" LineHeight="58" />
+        <TextBlock Text="{Binding Description}" FontSize="27" Foreground="#334155"
+                   TextWrapping="Wrap" LineHeight="40" />
+        <Image Source="{Binding Cover}" MaxHeight="760" MaxWidth="840" Stretch="Uniform"
+               HorizontalAlignment="Center" IsVisible="{Binding HasCover}" />
+    </StackPanel>
+  </Border>
+</UserControl>

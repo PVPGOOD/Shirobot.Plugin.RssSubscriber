@@ -4,9 +4,10 @@ using Shirobot.Plugin.RssSubscriber.Config;
 using Shirobot.Plugin.RssSubscriber.Feeds;
 using Shirobot.Plugin.RssSubscriber.Permissions;
 using Shirobot.Plugin.RssSubscriber.Scheduler;
+using Shirobot.Plugin.RssSubscriber.Sources;
 using Shirobot.Plugin.RssSubscriber.Subscriptions;
-using ShiroBot.Model.Common;
-using ShiroBot.SDK.Abstractions;
+using Shirobot.Plugin.RssSubscriber.Workflows;
+using ShiroBot.SDK.Models;
 using ShiroBot.SDK.Plugin;
 
 namespace Shirobot.Plugin.RssSubscriber.Commands;
@@ -18,7 +19,8 @@ public sealed class RssCommandHandler
     private readonly FeedRegistry _feeds;
     private readonly SubscriptionRegistry _subscriptions;
     private readonly RssPollScheduler _scheduler;
-    private readonly RssDispatcher _dispatcher;
+    private readonly IRssItemWorkflow _itemWorkflow;
+    private readonly SourceRegistry _sources;
     private readonly Func<Task> _reloadAsync;
     private readonly Action<RssPluginConfig> _saveConfig;
 
@@ -28,7 +30,8 @@ public sealed class RssCommandHandler
         FeedRegistry feeds,
         SubscriptionRegistry subscriptions,
         RssPollScheduler scheduler,
-        RssDispatcher dispatcher,
+        IRssItemWorkflow itemWorkflow,
+        SourceRegistry sources,
         Func<Task> reloadAsync,
         Action<RssPluginConfig> saveConfig)
     {
@@ -37,75 +40,56 @@ public sealed class RssCommandHandler
         _feeds = feeds;
         _subscriptions = subscriptions;
         _scheduler = scheduler;
-        _dispatcher = dispatcher;
+        _itemWorkflow = itemWorkflow;
+        _sources = sources;
         _reloadAsync = reloadAsync;
         _saveConfig = saveConfig;
     }
 
-    public async Task HandleGroupAsync(GroupIncomingMessage message)
+    public async Task HandleGroupAsync(MessageEvent message)
     {
         var canManage = PermissionResolver.CanManageGroupSubscription(_bot, message);
         var ctx = new CommandContext(
-            bot: _bot,
-            scope: SubscriberKey.Group(message.Group.GroupId),
-            senderId: message.SenderId,
+            sourceMessage: message,
+            scope: SubscriberKey.Group(message.Platform, message.Channel.Id, message.InstanceId),
+            senderId: message.Sender.Id,
             isAdminScope: canManage,
-            isGroup: true,
-            groupId: message.Group.GroupId,
-            replyAsync: (text, segments) => SendGroupAsync(message.Group.GroupId, false, message.SenderId, text, segments),
+            replyAsync: (text, segments) => SendReplyAsync(message, false, text, segments),
             replyMentionAsync: (mention, text, segments) =>
-                SendGroupAsync(message.Group.GroupId, mention, message.SenderId, text, segments),
-            sendSegmentsAsync: segments => _bot.Message.SendGroupMessageAsync(message.Group.GroupId, segments));
+                SendReplyAsync(message, mention, text, segments));
 
         await DispatchAsync(message.GetPlainText(), ctx);
     }
 
-    public async Task HandleFriendAsync(FriendIncomingMessage message)
+    public async Task HandleDirectAsync(MessageEvent message)
     {
         var ctx = new CommandContext(
-            bot: _bot,
-            scope: SubscriberKey.Friend(message.SenderId),
-            senderId: message.SenderId,
+            sourceMessage: message,
+            scope: SubscriberKey.Friend(message.Platform, message.Sender.Id, message.InstanceId),
+            senderId: message.Sender.Id,
             isAdminScope: true, // 私聊一律允许操作自己的订阅
-            isGroup: false,
-            groupId: null,
-            replyAsync: (text, segments) => SendPrivateAsync(message.SenderId, text, segments),
-            replyMentionAsync: (_, text, segments) => SendPrivateAsync(message.SenderId, text, segments),
-            sendSegmentsAsync: segments => _bot.Message.SendPrivateMessageAsync(message.SenderId, segments));
+            replyAsync: (text, segments) => SendReplyAsync(message, false, text, segments),
+            replyMentionAsync: (_, text, segments) => SendReplyAsync(message, false, text, segments));
 
         await DispatchAsync(message.GetPlainText(), ctx);
     }
 
-    private Task SendGroupAsync(long groupId, bool mention, long mentionUserId, string text, IEnumerable<OutgoingSegment>? extra)
+    private Task SendReplyAsync(MessageEvent message, bool mention, string text, IEnumerable<MessageSegment>? extra)
     {
-        var segments = new List<OutgoingSegment>();
-        if (mention)
-        {
-            segments.Add(new MentionOutgoingSegment(mentionUserId));
-            segments.Add(new TextOutgoingSegment(" " + text));
-        }
-        else
-        {
-            segments.Add(new TextOutgoingSegment(text));
-        }
-
-        if (extra is not null)
-        {
-            segments.AddRange(extra);
-        }
-
-        return _bot.Message.SendGroupMessageAsync(groupId, segments.ToArray());
+        return _bot.Message.QuoteReplyAsync(message, BuildReplySegments(message, mention, text, extra));
     }
 
-    private Task SendPrivateAsync(long userId, string text, IEnumerable<OutgoingSegment>? extra)
+    internal static MessageSegment[] BuildReplySegments(
+        MessageEvent message, bool mention, string text, IEnumerable<MessageSegment>? extra = null)
     {
-        var segments = new List<OutgoingSegment> { new TextOutgoingSegment(text) };
-        if (extra is not null)
-        {
-            segments.AddRange(extra);
-        }
-
-        return _bot.Message.SendPrivateMessageAsync(userId, segments.ToArray());
+        var segments = new List<MessageSegment>();
+        // QQPlatform currently renders MentionSegment as plain "@" + OpenID. The reply's
+        // msg_id already targets the incoming message, so do not show a fake mention.
+        if (mention && !string.Equals(message.Platform, "qq-official", StringComparison.OrdinalIgnoreCase))
+            segments.Add(new MentionSegment(message.Sender.Id));
+        segments.Add(new TextSegment(segments.Count > 0 ? " " + text : text));
+        if (extra is not null) segments.AddRange(extra);
+        return [.. segments];
     }
 
     private async Task DispatchAsync(string raw, CommandContext ctx)
@@ -195,6 +179,7 @@ public sealed class RssCommandHandler
         builder.AppendLine($"min_interval: {config.MinIntervalSeconds}s");
         builder.AppendLine($"max_items_per_push: {config.MaxItemsPerPush}");
         builder.AppendLine($"include_image: {(config.IncludeImage ? "on" : "off")}");
+        builder.AppendLine($"rendered_cards: {(config.EnableRenderedCards ? "on" : "off")}");
         builder.AppendLine($"allow_private_urls: {(config.AllowPrivateUrls ? "on" : "off")}");
         builder.AppendLine($"subscriptions: {ids.Count}");
         if (ids.Count > 0)
@@ -283,7 +268,8 @@ public sealed class RssCommandHandler
             }
 
             var subscribed = _subscriptions.Add(ctx.Scope, existingId);
-            _scheduler.PersistSync();
+            if (subscribed)
+                _scheduler.PersistSync();
             await ctx.ReplyMentionAsync(true,
                 subscribed ? $"[RSS] 已订阅 {existingId}。" : $"[RSS] 当前作用域已订阅过 {existingId}。",
                 null);
@@ -291,18 +277,30 @@ public sealed class RssCommandHandler
         }
 
         var url = source;
-        var explicitId = tokens.Length == 3 ? FeedIdGenerator.Sanitize(tokens[2]) : null;
-        var githubDefaultFeedId = default(string?);
-        var normalizedFromGitHubRepository = FeedIdGenerator.TryNormalizeGitHubRepositoryUrl(url, out var normalizedUrl, out githubDefaultFeedId);
-        if (normalizedFromGitHubRepository)
+        SourceSelection selected;
+        try
         {
-            url = normalizedUrl;
+            selected = _sources.ResolveInput(url);
+        }
+        catch (ArgumentException ex)
+        {
+            await ctx.ReplyMentionAsync(true, $"[RSS] {ex.Message}", null);
+            return;
+        }
+        url = selected.Input.FeedUrl;
+        var config = _configAccessor();
+        var explicitId = tokens.Length == 3 ? FeedIdGenerator.Sanitize(tokens[2]) : null;
+
+        var existingByUrl = _feeds.FindByUrl(url);
+        if (existingByUrl is not null)
+        {
+            await SubscribeExistingAsync(existingByUrl, explicitId, ctx);
+            return;
         }
 
-        var config = _configAccessor();
-        if (!UrlSafetyGuard.IsAllowed(url, config.AllowPrivateUrls, out var safetyReason))
+        if (explicitId is not null && _feeds.Exists(explicitId))
         {
-            await ctx.ReplyMentionAsync(true, "[RSS] " + safetyReason, null);
+            await ctx.ReplyMentionAsync(true, $"[RSS] feed_id={explicitId} 已存在，请换一个。", null);
             return;
         }
 
@@ -320,28 +318,10 @@ public sealed class RssCommandHandler
             return;
         }
 
-        var existingByUrl = _feeds.FindByUrl(url);
+        existingByUrl = _feeds.FindByUrl(url);
         if (existingByUrl is not null)
         {
-            // 同 URL 复用
-            if (explicitId is not null && !string.Equals(explicitId, existingByUrl.Id, StringComparison.OrdinalIgnoreCase))
-            {
-                await ctx.ReplyMentionAsync(true,
-                    $"[RSS] 同 URL 已存在 feed_id={existingByUrl.Id}，无法另起 id={explicitId}。",
-                    null);
-                return;
-            }
-
-            var added = _subscriptions.Add(ctx.Scope, existingByUrl.Id);
-            if (!string.IsNullOrWhiteSpace(validationResult.FeedTitle))
-            {
-                _feeds.SetDisplayName(existingByUrl.Id, validationResult.FeedTitle);
-            }
-            _scheduler.PersistSync();
-            var msg = added
-                ? $"[RSS] 已订阅已有 feed: {existingByUrl.Id}"
-                : $"[RSS] 当前作用域已订阅过 {existingByUrl.Id}。";
-            await ctx.ReplyMentionAsync(true, msg, null);
+            await SubscribeExistingAsync(existingByUrl, explicitId, ctx);
             return;
         }
 
@@ -360,30 +340,49 @@ public sealed class RssCommandHandler
         }
         else
         {
-            var baseId = !string.IsNullOrWhiteSpace(githubDefaultFeedId)
-                ? githubDefaultFeedId
+            var baseId = !string.IsNullOrWhiteSpace(selected.Input.SuggestedFeedId)
+                ? selected.Input.SuggestedFeedId
                 : FeedIdGenerator.Derive(url);
             feedId = FeedIdGenerator.EnsureUnique(baseId, id => _feeds.Exists(id));
         }
 
-        _feeds.Add(feedId, url, ctx.Scope.Format());
-        if (!string.IsNullOrWhiteSpace(validationResult.FeedTitle))
+        if (!_feeds.TryAddInitialized(
+                feedId, url, validationResult.FeedTitle, ctx.Scope.Format(),
+                validationResult.Items, config.LastSeenCapacity, out var addedFeed,
+                feed => _subscriptions.Add(ctx.Scope, feed.Id), selected.Profile.Id,
+                validationResult.FeedImageUrl, validationResult.Generator))
         {
-            _feeds.SetDisplayName(feedId, validationResult.FeedTitle);
+            if (FeedRegistry.UrlEquals(addedFeed.Url, url))
+                await SubscribeExistingAsync(addedFeed, explicitId, ctx);
+            else
+                await ctx.ReplyMentionAsync(true, $"[RSS] feed_id={feedId} 已被其他订阅占用，请重试。", null);
+            return;
         }
-        _feeds.UpdateAfterFetch(
-            feedId,
-            validationResult.Items.Select(i => i.Id).Where(id => !string.IsNullOrWhiteSpace(id)),
-            config.LastSeenCapacity);
-        _subscriptions.Add(ctx.Scope, feedId);
+
         _scheduler.PersistSync();
 
-        var normalizeMessage = normalizedFromGitHubRepository
-            ? $"\n已自动转换 GitHub 仓库地址为: {url}"
+        var normalizeMessage = !string.Equals(source, url, StringComparison.OrdinalIgnoreCase)
+            ? $"\n已转换订阅地址为: {url}"
             : string.Empty;
         await ctx.ReplyMentionAsync(true,
-            $"[RSS] 已添加并订阅 feed_id={feedId}，已验证 RSS/Atom 源并记录 {validationResult.Items.Count} 条历史，下次新增条目将推送到本会话。{normalizeMessage}",
+            $"[RSS] 已添加并订阅 feed_id={feedId}，来源：{selected.Profile.DisplayName}，已验证 RSS/Atom 源并记录 {validationResult.Items.Count} 条历史，下次新增条目将推送到本会话。{normalizeMessage}",
             null);
+    }
+
+    private async Task SubscribeExistingAsync(FeedSource feed, string? requestedId, CommandContext ctx)
+    {
+        if (requestedId is not null && !string.Equals(requestedId, feed.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            await ctx.ReplyMentionAsync(true,
+                $"[RSS] 同 URL 已存在 feed_id={feed.Id}，无法另起 id={requestedId}。", null);
+            return;
+        }
+
+        var added = _subscriptions.Add(ctx.Scope, feed.Id);
+        if (added)
+            _scheduler.PersistSync();
+        await ctx.ReplyMentionAsync(true,
+            added ? $"[RSS] 已订阅已有 feed: {feed.Id}。" : $"[RSS] 当前作用域已订阅过 {feed.Id}。", null);
     }
 
     private async Task RemoveAsync(string[] tokens, CommandContext ctx)
@@ -417,6 +416,7 @@ public sealed class RssCommandHandler
         if (!_subscriptions.HasAnySubscriber(id))
         {
             _feeds.Remove(id);
+            _scheduler.ForgetFeed(id);
             BotLog.Info($"[Rss] feed={id} 已无订阅者，自动清理。");
         }
 
@@ -465,6 +465,7 @@ public sealed class RssCommandHandler
         }
 
         var subscriberCount = _subscriptions.RenameFeed(oldId, newId);
+        _scheduler.RenameFeed(oldId, newId);
         _scheduler.PersistSync();
         await ctx.ReplyAsync($"[RSS] 已重命名 {oldId} -> {newId}，已更新 {subscriberCount} 个订阅关系。", null);
     }
@@ -507,49 +508,30 @@ public sealed class RssCommandHandler
             }
         }
 
-        FeedFetchResult? result;
-        try
-        {
-            result = await _scheduler.FetchOnDemandAsync(id, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            await ctx.ReplyAsync($"[RSS] {id} 抓取失败: {ex.Message}", null);
-            return;
-        }
+        var result = await _itemWorkflow.FetchAndDeliverAsync(
+            id,
+            "latest",
+            ctx.Scope,
+            items => FilterByTag(items, tag)
+                .OrderByDescending(item => item.Published ?? DateTimeOffset.MinValue)
+                .Take(count)
+                .ToList(),
+            ctx.SourceMessage.MessageId,
+            includeImage: true,
+            CancellationToken.None);
 
-        if (result is null)
-        {
-            await ctx.ReplyAsync($"[RSS] {id} 抓取失败。", null);
-            return;
-        }
-
-        var items = result.Items;
-        var matched = FilterByTag(items, tag);
-        if (matched.Count == 0)
-        {
-            await ctx.ReplyAsync($"[{id}]{(tag is null ? string.Empty : " tag=" + tag)} 暂无匹配条目（已扫描 {items.Count} 条）。", null);
-            return;
-        }
-
-        var picked = matched
-            .OrderByDescending(item => item.Published ?? DateTimeOffset.MinValue)
-            .Take(count)
-            .ToList();
-
-        // 重新读 feed 以拿到 DisplayName（可能由本次抓取写入）
-        if (!_feeds.TryGet(id, out var feedRef))
+        if (!result.FeedFound)
         {
             await ctx.ReplyAsync($"[RSS] 未找到 feed_id={id}。", null);
             return;
         }
-
-        foreach (var item in picked)
+        if (!result.FetchSucceeded)
         {
-            var segments = await _dispatcher
-                .BuildItemSegmentsAsync(feedRef, item, includeImage: true, CancellationToken.None);
-            await ctx.SendSegmentsAsync(segments);
+            await ctx.ReplyAsync($"[RSS] {id} 抓取失败。", null);
+            return;
         }
+        if (result.SelectedItems == 0)
+            await ctx.ReplyAsync($"[{id}]{(tag is null ? string.Empty : " tag=" + tag)} 暂无匹配条目（已扫描 {result.FetchedItems} 条）。", null);
     }
 
     private static List<FeedItem> FilterByTag(IReadOnlyList<FeedItem> items, string? tag)
@@ -603,25 +585,22 @@ public sealed class RssCommandHandler
             return;
         }
 
-        var result = await _scheduler.FetchOnDemandAsync(id, CancellationToken.None);
-        if (result is null || result.Items.Count == 0)
-        {
+        var result = await _itemWorkflow.FetchAndDeliverAsync(
+            id,
+            "test",
+            ctx.Scope,
+            items => items
+                .OrderByDescending(item => item.Published ?? DateTimeOffset.MinValue)
+                .Take(1)
+                .ToList(),
+            ctx.SourceMessage.MessageId,
+            includeImage: true,
+            CancellationToken.None);
+
+        if (!result.FeedFound)
+            await ctx.ReplyAsync($"[RSS] 未找到 feed_id={id}。", null);
+        else if (!result.FetchSucceeded || result.SelectedItems == 0)
             await ctx.ReplyAsync($"[RSS] {id} 没有可用条目或抓取失败。", null);
-            return;
-        }
-
-        var latest = result.Items
-            .OrderByDescending(item => item.Published ?? DateTimeOffset.MinValue)
-            .First();
-
-        if (!_feeds.TryGet(id, out var refreshed))
-        {
-            refreshed = feed;
-        }
-
-        var segments = await _dispatcher
-            .BuildItemSegmentsAsync(refreshed, latest, includeImage: true, CancellationToken.None);
-        await ctx.SendSegmentsAsync(segments);
     }
 
     private async Task IntervalAsync(string[] tokens, CommandContext ctx)
@@ -844,6 +823,37 @@ public sealed class RssCommandHandler
                 feedback = $"include_image = {(includeImage ? "on" : "off")}";
                 return true;
 
+            case "enable_rendered_cards":
+            case "rendered_cards":
+                if (!TryParseBool(value, out var enableRenderedCards))
+                {
+                    feedback = "[RSS] enable_rendered_cards 仅支持 on/off/true/false。";
+                    return false;
+                }
+                config.EnableRenderedCards = enableRenderedCards;
+                feedback = $"enable_rendered_cards = {(enableRenderedCards ? "on" : "off")}";
+                return true;
+
+            case "enable_markdown":
+                if (!TryParseBool(value, out var enableMarkdown))
+                {
+                    feedback = "[RSS] enable_markdown 仅支持 on/off/true/false。";
+                    return false;
+                }
+                config.EnableMarkdown = enableMarkdown;
+                feedback = $"enable_markdown = {(enableMarkdown ? "on" : "off")}";
+                return true;
+
+            case "enable_action_buttons":
+                if (!TryParseBool(value, out var enableButtons))
+                {
+                    feedback = "[RSS] enable_action_buttons 仅支持 on/off/true/false。";
+                    return false;
+                }
+                config.EnableActionButtons = enableButtons;
+                feedback = $"enable_action_buttons = {(enableButtons ? "on" : "off")}";
+                return true;
+
             case "allow_private_urls":
             case "private":
                 if (!TryParseBool(value, out var allowPrivate))
@@ -904,6 +914,9 @@ public sealed class RssCommandHandler
         builder.AppendLine($"max_description_length = {config.MaxDescriptionLength}");
         builder.AppendLine($"latest_max_n           = {config.LatestMaxN}");
         builder.AppendLine($"include_image          = {(config.IncludeImage ? "on" : "off")}");
+        builder.AppendLine($"enable_rendered_cards = {(config.EnableRenderedCards ? "on" : "off")}");
+        builder.AppendLine($"enable_markdown        = {(config.EnableMarkdown ? "on" : "off")}");
+        builder.AppendLine($"enable_action_buttons  = {(config.EnableActionButtons ? "on" : "off")}");
         builder.AppendLine($"allow_private_urls     = {(config.AllowPrivateUrls ? "on" : "off")}");
         builder.AppendLine($"user_agent             = {config.UserAgent}");
         builder.AppendLine($"last_seen_capacity     = {config.LastSeenCapacity}");
@@ -925,6 +938,9 @@ public sealed class RssCommandHandler
         "  max_description_length   <n>\n" +
         "  latest_max_n             <n>\n" +
         "  include_image            on|off\n" +
+        "  enable_rendered_cards   on|off\n" +
+        "  enable_markdown         on|off\n" +
+        "  enable_action_buttons   on|off\n" +
         "  allow_private_urls       on|off\n" +
         "  user_agent               <ua>\n" +
         "  last_seen_capacity       <n>\n" +

@@ -18,10 +18,15 @@ public sealed class FeedRegistry
                 {
                     Id = id,
                     Url = persistedFeed.Url,
+                    SourceId = persistedFeed.SourceId,
                     DisplayName = persistedFeed.DisplayName,
+                    FeedImageUrl = persistedFeed.FeedImageUrl,
+                    Generator = persistedFeed.Generator,
                     IntervalSeconds = persistedFeed.IntervalSeconds,
                     LastSeenGuids = persistedFeed.LastSeenGuids?.ToList() ?? new List<string>(),
                     LastFetchAt = persistedFeed.LastFetchAt,
+                    ETag = persistedFeed.ETag,
+                    LastModified = persistedFeed.LastModified,
                     ConsecutiveFailures = persistedFeed.ConsecutiveFailures,
                     CreatedBy = persistedFeed.CreatedBy,
                     CreatedAt = persistedFeed.CreatedAt == default
@@ -41,10 +46,15 @@ public sealed class FeedRegistry
                 kv => new PersistentFeed
                 {
                     Url = kv.Value.Url,
+                    SourceId = kv.Value.SourceId,
                     DisplayName = kv.Value.DisplayName,
+                    FeedImageUrl = kv.Value.FeedImageUrl,
+                    Generator = kv.Value.Generator,
                     IntervalSeconds = kv.Value.IntervalSeconds,
                     LastSeenGuids = kv.Value.LastSeenGuids.ToList(),
                     LastFetchAt = kv.Value.LastFetchAt,
+                    ETag = kv.Value.ETag,
+                    LastModified = kv.Value.LastModified,
                     ConsecutiveFailures = kv.Value.ConsecutiveFailures,
                     CreatedBy = kv.Value.CreatedBy,
                     CreatedAt = kv.Value.CreatedAt
@@ -80,7 +90,7 @@ public sealed class FeedRegistry
         lock (_lock)
         {
             return _feeds.Values.FirstOrDefault(f =>
-                string.Equals(f.Url, url, StringComparison.OrdinalIgnoreCase));
+                UrlEquals(f.Url, url));
         }
     }
 
@@ -92,20 +102,77 @@ public sealed class FeedRegistry
         }
     }
 
-    public FeedSource Add(string id, string url, string? createdBy)
+    public bool TryAddInitialized(
+        string id, string url, string? displayName, string? createdBy,
+        IReadOnlyList<FeedItem> baselineItems, int lastSeenCapacity, out FeedSource feed,
+        Action<FeedSource>? onAdded = null, string? sourceId = null, string? feedImageUrl = null,
+        string? generator = null)
     {
         lock (_lock)
         {
-            var feed = new FeedSource
+            var existing = _feeds.Values.FirstOrDefault(f =>
+                UrlEquals(f.Url, url));
+            if (existing is not null)
+            {
+                feed = existing;
+                return false;
+            }
+
+            if (_feeds.TryGetValue(id, out existing))
+            {
+                feed = existing;
+                return false;
+            }
+
+            var guids = BaselineGuids(baselineItems).ToList();
+            if (lastSeenCapacity > 0 && guids.Count > lastSeenCapacity)
+                guids = guids.TakeLast(lastSeenCapacity).ToList();
+
+            feed = new FeedSource
             {
                 Id = id,
                 Url = url,
+                SourceId = sourceId,
+                DisplayName = displayName,
+                FeedImageUrl = feedImageUrl,
+                Generator = generator,
+                LastSeenGuids = guids,
+                LastFetchAt = DateTimeOffset.UtcNow,
                 CreatedBy = createdBy,
                 CreatedAt = DateTimeOffset.UtcNow
             };
             _feeds[id] = feed;
-            return feed;
+            try
+            {
+                onAdded?.Invoke(feed);
+            }
+            catch
+            {
+                _feeds.Remove(id);
+                throw;
+            }
+            return true;
         }
+    }
+
+    public static IEnumerable<string> BaselineGuids(IReadOnlyList<FeedItem> items) =>
+        items.Reverse()
+            .OrderBy(item => item.Published ?? DateTimeOffset.MinValue)
+            .Select(item => item.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    public static bool UrlEquals(string left, string right)
+    {
+        if (!Uri.TryCreate(left, UriKind.Absolute, out var leftUri) ||
+            !Uri.TryCreate(right, UriKind.Absolute, out var rightUri))
+            return string.Equals(left, right, StringComparison.Ordinal);
+
+        return string.Equals(leftUri.Scheme, rightUri.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(leftUri.IdnHost, rightUri.IdnHost, StringComparison.OrdinalIgnoreCase)
+            && leftUri.Port == rightUri.Port
+            && string.Equals(leftUri.UserInfo, rightUri.UserInfo, StringComparison.Ordinal)
+            && string.Equals(leftUri.PathAndQuery, rightUri.PathAndQuery, StringComparison.Ordinal);
     }
 
     public bool Remove(string id)
@@ -172,6 +239,18 @@ public sealed class FeedRegistry
         }
     }
 
+    public void SetValidators(string id, string? etag, DateTimeOffset? lastModified)
+    {
+        lock (_lock)
+        {
+            if (_feeds.TryGetValue(id, out var feed))
+            {
+                feed.ETag = etag;
+                feed.LastModified = lastModified;
+            }
+        }
+    }
+
     public void SetInterval(string id, int? intervalSeconds)
     {
         lock (_lock)
@@ -196,6 +275,29 @@ public sealed class FeedRegistry
 
                 feed.DisplayName = displayName.Trim();
             }
+        }
+    }
+
+    public void SetFeedImageUrl(string id, string? feedImageUrl)
+    {
+        if (!Uri.TryCreate(feedImageUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme is not ("http" or "https"))
+            return;
+
+        lock (_lock)
+        {
+            if (_feeds.TryGetValue(id, out var feed))
+                feed.FeedImageUrl = uri.AbsoluteUri;
+        }
+    }
+
+    public void SetGenerator(string id, string? generator)
+    {
+        if (string.IsNullOrWhiteSpace(generator)) return;
+        lock (_lock)
+        {
+            if (_feeds.TryGetValue(id, out var feed))
+                feed.Generator = generator.Trim();
         }
     }
 

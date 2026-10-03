@@ -5,38 +5,33 @@ namespace Shirobot.Plugin.RssSubscriber.Feeds;
 
 public static class UrlSafetyGuard
 {
-    public static bool IsAllowed(string url, bool allowPrivate, out string reason)
+    public static async Task<(bool Allowed, string Reason)> CheckAsync(
+        string url, bool allowPrivate, CancellationToken cancellationToken)
     {
-        reason = string.Empty;
-
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            reason = "URL 不是合法的绝对地址。";
-            return false;
+            return (false, "URL 不是合法的绝对地址。");
         }
 
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
         {
-            reason = $"仅支持 http/https，当前 scheme={uri.Scheme}。";
-            return false;
+            return (false, $"仅支持 http/https，当前 scheme={uri.Scheme}。");
         }
 
         if (allowPrivate)
         {
-            return true;
+            return (true, string.Empty);
         }
 
         var host = uri.Host;
         if (string.IsNullOrWhiteSpace(host))
         {
-            reason = "URL 缺少 host。";
-            return false;
+            return (false, "URL 缺少 host。");
         }
 
         if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
         {
-            reason = "拒绝订阅 localhost。";
-            return false;
+            return (false, "拒绝订阅 localhost。");
         }
 
         IPAddress[] addresses;
@@ -48,12 +43,15 @@ public static class UrlSafetyGuard
         {
             try
             {
-                addresses = Dns.GetHostAddresses(host);
+                addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                reason = $"无法解析 host {host}: {ex.Message}";
-                return false;
+                return (false, $"无法解析 host {host}: {ex.Message}");
             }
         }
 
@@ -61,12 +59,11 @@ public static class UrlSafetyGuard
         {
             if (IsPrivateOrSpecial(address))
             {
-                reason = $"拒绝订阅内网/回环地址（{address}）。如确需，请管理员在 config.toml 开启 allow_private_urls。";
-                return false;
+                return (false, $"拒绝订阅内网/回环地址（{address}）。如确需，请管理员在 config.toml 开启 allow_private_urls。");
             }
         }
 
-        return true;
+        return (true, string.Empty);
     }
 
     private static bool IsPrivateOrSpecial(IPAddress address)

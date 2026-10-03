@@ -4,8 +4,8 @@ namespace Shirobot.Plugin.RssSubscriber.Subscriptions;
 
 public sealed class SubscriptionRegistry
 {
-    private readonly Dictionary<long, HashSet<string>> _groupSubs = new();
-    private readonly Dictionary<long, HashSet<string>> _friendSubs = new();
+    private readonly Dictionary<string, HashSet<string>> _groupSubs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<string>> _friendSubs = new(StringComparer.Ordinal);
     private readonly object _lock = new();
 
     public void LoadFrom(
@@ -19,17 +19,19 @@ public sealed class SubscriptionRegistry
 
             foreach (var (key, list) in groupSubs)
             {
-                if (long.TryParse(key, out var id))
+                if (!string.IsNullOrWhiteSpace(key))
                 {
-                    _groupSubs[id] = new HashSet<string>(list ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                    _groupSubs[SubscriberKey.FromStorageKey(SubscriberScope.Group, key).StorageKey] =
+                        new HashSet<string>(list ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
                 }
             }
 
             foreach (var (key, list) in friendSubs)
             {
-                if (long.TryParse(key, out var id))
+                if (!string.IsNullOrWhiteSpace(key))
                 {
-                    _friendSubs[id] = new HashSet<string>(list ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                    _friendSubs[SubscriberKey.FromStorageKey(SubscriberScope.Friend, key).StorageKey] =
+                        new HashSet<string>(list ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
                 }
             }
         }
@@ -59,6 +61,16 @@ public sealed class SubscriptionRegistry
     {
         lock (_lock)
         {
+            if (key.InstanceId is not null)
+            {
+                var dict = key.Scope == SubscriberScope.Group ? _groupSubs : _friendSubs;
+                if (!dict.ContainsKey(key.StorageKey) && dict.Remove(key.LegacyStorageKey, out var legacyFeeds))
+                {
+                    var instanceFeeds = new HashSet<string>(legacyFeeds, StringComparer.OrdinalIgnoreCase);
+                    dict[key.StorageKey] = instanceFeeds;
+                }
+            }
+
             var bucket = GetBucket(key, create: true)!;
             return bucket.Add(feedId);
         }
@@ -68,7 +80,10 @@ public sealed class SubscriptionRegistry
     {
         lock (_lock)
         {
-            var bucket = GetBucket(key, create: false);
+            var dict = key.Scope == SubscriberScope.Group ? _groupSubs : _friendSubs;
+            var storageKey = dict.ContainsKey(key.StorageKey) || key.InstanceId is null
+                ? key.StorageKey : key.LegacyStorageKey;
+            dict.TryGetValue(storageKey, out var bucket);
             if (bucket is null)
             {
                 return false;
@@ -79,11 +94,11 @@ public sealed class SubscriptionRegistry
             {
                 if (key.Scope == SubscriberScope.Group)
                 {
-                    _groupSubs.Remove(key.TargetId);
+                    _groupSubs.Remove(storageKey);
                 }
                 else
                 {
-                    _friendSubs.Remove(key.TargetId);
+                    _friendSubs.Remove(storageKey);
                 }
             }
 
@@ -123,7 +138,7 @@ public sealed class SubscriptionRegistry
             {
                 if (ids.Contains(feedId))
                 {
-                    subscribers.Add(SubscriberKey.Group(groupId));
+                    subscribers.Add(SubscriberKey.FromStorageKey(SubscriberScope.Group, groupId));
                 }
             }
 
@@ -131,7 +146,7 @@ public sealed class SubscriptionRegistry
             {
                 if (ids.Contains(feedId))
                 {
-                    subscribers.Add(SubscriberKey.Friend(userId));
+                    subscribers.Add(SubscriberKey.FromStorageKey(SubscriberScope.Friend, userId));
                 }
             }
 
@@ -219,10 +234,16 @@ public sealed class SubscriptionRegistry
     private HashSet<string>? GetBucket(SubscriberKey key, bool create)
     {
         var dict = key.Scope == SubscriberScope.Group ? _groupSubs : _friendSubs;
-        if (dict.TryGetValue(key.TargetId, out var bucket))
+        if (dict.TryGetValue(key.StorageKey, out var bucket))
         {
             return bucket;
         }
+
+        // Existing subscriptions used platform-only keys. They remain visible to
+        // commands after upgrade, and are routed by the dispatcher only when the
+        // host has a single matching adapter instance.
+        if (!create && key.InstanceId is not null && dict.TryGetValue(key.LegacyStorageKey, out bucket))
+            return bucket;
 
         if (!create)
         {
@@ -230,7 +251,7 @@ public sealed class SubscriptionRegistry
         }
 
         bucket = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        dict[key.TargetId] = bucket;
+        dict[key.StorageKey] = bucket;
         return bucket;
     }
 }

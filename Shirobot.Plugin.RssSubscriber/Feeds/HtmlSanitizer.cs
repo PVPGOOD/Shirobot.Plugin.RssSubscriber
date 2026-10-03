@@ -7,6 +7,12 @@ public static class HtmlSanitizer
 {
     private static readonly Regex TagRegex = new("<[^>]+>", RegexOptions.Compiled);
     private static readonly Regex WhitespaceRegex = new("\\s+", RegexOptions.Compiled);
+    private static readonly Regex NonContentBlockRegex = new(
+        "<(script|style|template)\\b[^>]*>.*?</\\1\\s*>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    private static readonly Regex BlockBreakRegex = new(
+        "</?(?:br|p|div|li|blockquote|h[1-6]|hr|tr)\\b[^>]*>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex ImgSrcRegex = new(
         "<img[^>]*\\bsrc\\s*=\\s*[\"']([^\"']+)[\"']",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -28,6 +34,19 @@ public static class HtmlSanitizer
         }
 
         return collapsed;
+    }
+
+    public static string StripFormattedText(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+
+        var withoutNonContent = NonContentBlockRegex.Replace(html, string.Empty);
+        var withBreaks = BlockBreakRegex.Replace(withoutNonContent, Environment.NewLine);
+        var decoded = WebUtility.HtmlDecode(TagRegex.Replace(withBreaks, string.Empty));
+        return string.Join(Environment.NewLine, decoded
+            .Split([(char)13, (char)10], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => WhitespaceRegex.Replace(line, " ").Trim())
+            .Where(line => line.Length > 0));
     }
 
     public static string? FindFirstImage(string? html, string? baseUri = null)

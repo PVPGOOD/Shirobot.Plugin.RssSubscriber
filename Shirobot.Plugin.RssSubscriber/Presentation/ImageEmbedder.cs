@@ -1,10 +1,10 @@
-using ShiroBot.Model.Common;
-using ShiroBot.SDK.Abstractions;
+using ShiroBot.SDK.Models;
+using ShiroBot.SDK.Plugin;
 
-namespace Shirobot.Plugin.RssSubscriber.Feeds;
+namespace Shirobot.Plugin.RssSubscriber.Presentation;
 
 /// <summary>
-/// 把 http(s) 图片 URL 下载并转成 base64:// 段，避免 adapter / QQ 服务端拉不到本机/内网地址。
+/// 为支持 base64:// 的通用适配器准备图片段；QQPlatform Markdown 直接使用公网图片 URL。
 /// </summary>
 public sealed class ImageEmbedder
 {
@@ -18,7 +18,7 @@ public sealed class ImageEmbedder
         _httpClient = httpClient;
     }
 
-    public async Task<ImageOutgoingSegment?> TryBuildAsync(string url, CancellationToken cancellationToken)
+    public async Task<ImageSegment?> TryBuildAsync(string url, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -32,7 +32,7 @@ public sealed class ImageEmbedder
 
         if (uri.Scheme is "base64" or "file")
         {
-            return new ImageOutgoingSegment(url);
+            return new ImageSegment(url);
         }
 
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
@@ -50,7 +50,7 @@ public sealed class ImageEmbedder
             if (!response.IsSuccessStatusCode)
             {
                 BotLog.Warning($"[Rss] 下载图片失败 {url}: HTTP {(int)response.StatusCode}");
-                return new ImageOutgoingSegment(url);
+                return new ImageSegment(url);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
@@ -62,7 +62,7 @@ public sealed class ImageEmbedder
                 if (memory.Length + read > MaxBytes)
                 {
                     BotLog.Warning($"[Rss] 图片超过 {MaxBytes / 1024 / 1024}MB 阈值，回退到原始 URL: {url}");
-                    return new ImageOutgoingSegment(url);
+                    return new ImageSegment(url);
                 }
 
                 memory.Write(buffer, 0, read);
@@ -74,12 +74,12 @@ public sealed class ImageEmbedder
             }
 
             var base64 = Convert.ToBase64String(memory.GetBuffer(), 0, (int)memory.Length);
-            return new ImageOutgoingSegment("base64://" + base64);
+            return new ImageSegment("base64://" + base64);
         }
         catch (Exception ex)
         {
             BotLog.Warning($"[Rss] 下载图片异常，回退到原始 URL {url}: {ex.GetType().Name}: {ex.Message}");
-            return new ImageOutgoingSegment(url);
+            return new ImageSegment(url);
         }
     }
 }

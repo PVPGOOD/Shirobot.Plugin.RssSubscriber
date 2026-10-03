@@ -1,10 +1,10 @@
 enabled = true
 
 # 全局默认轮询间隔，单条 feed 可以通过 #rss interval 单独覆盖。
-default_interval_seconds = 10
+default_interval_seconds = 5
 
 # 单 feed 最小轮询间隔。
-min_interval_seconds = 5
+min_interval_seconds = 2
 
 # 单次 HTTP 请求超时。
 request_timeout_seconds = 30
@@ -21,14 +21,22 @@ latest_max_n = 5
 # 是否在推送时附第一张图片。
 include_image = true
 
+# 通用消息适配器使用 AXAML 卡片；渲染不可用时自动回退文本。
+enable_rendered_cards = true
+
 # 是否允许订阅内网/回环地址（默认拒绝，防 SSRF）。
 allow_private_urls = false
 
 # HTTP User-Agent。
-user_agent = "Shirobot-Rss/1.0"
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 # 每个 feed 已推送 GUID 的最大保留数量（环形）。
 last_seen_capacity = 100
 
 # 失败退避的最大间隔。
 backoff_max_seconds = 3600
+
+# QQPlatform: RSS Markdown 模板与交互按钮。模板支持 title、feed、feed_id、description、published、link、link_button、image。
+enable_markdown = true
+enable_action_buttons = true
+markdown_template = "## {title}\n\n{description}\n\n{image}\n\n> 来源：{feed} · {published}\n\n{link_button}"

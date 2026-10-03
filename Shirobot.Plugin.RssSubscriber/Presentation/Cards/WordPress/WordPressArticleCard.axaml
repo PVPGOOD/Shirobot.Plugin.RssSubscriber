@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.WordPress.WordPressArticleCard">
+  <Border Width="920" Background="{DynamicResource WpCardBg}"
+          BorderBrush="{DynamicResource WpCardBorder}" BorderThickness="1"
+          CornerRadius="24" Padding="34" ClipToBounds="True">
+    <Border.Resources>
+      <ResourceDictionary>
+        <ResourceDictionary.ThemeDictionaries>
+          <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="WpCardBg" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="WpCardBorder" Color="#DCE5EF" />
+            <SolidColorBrush x:Key="WpTextPrimary" Color="#172B4D" />
+            <SolidColorBrush x:Key="WpTextSecondary" Color="#44546F" />
+            <SolidColorBrush x:Key="WpTextMuted" Color="#6B778C" />
+            <SolidColorBrush x:Key="WpBrandBg" Color="#EAF3FA" />
+            <SolidColorBrush x:Key="WpBrandText" Color="#21759B" />
+            <SolidColorBrush x:Key="WpMediaPlaceholder" Color="#F1F5F9" />
+          </ResourceDictionary>
+          <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="WpCardBg" Color="#1C2430" />
+            <SolidColorBrush x:Key="WpCardBorder" Color="#3B4758" />
+            <SolidColorBrush x:Key="WpTextPrimary" Color="#E6EDF5" />
+            <SolidColorBrush x:Key="WpTextSecondary" Color="#C4CFDD" />
+            <SolidColorBrush x:Key="WpTextMuted" Color="#98A6B8" />
+            <SolidColorBrush x:Key="WpBrandBg" Color="#1B3548" />
+            <SolidColorBrush x:Key="WpBrandText" Color="#78BCE0" />
+            <SolidColorBrush x:Key="WpMediaPlaceholder" Color="#2A3442" />
+          </ResourceDictionary>
+        </ResourceDictionary.ThemeDictionaries>
+      </ResourceDictionary>
+    </Border.Resources>
+
+    <StackPanel Spacing="24">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="18">
+        <Border Width="78" Height="78" CornerRadius="20" Background="{DynamicResource WpMediaPlaceholder}"
+                ClipToBounds="True" IsVisible="{Binding HasAvatar}">
+          <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
+        </Border>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+          <TextBlock Text="{Binding FeedName}" FontSize="22" FontWeight="SemiBold"
+                     Foreground="{DynamicResource WpTextPrimary}" TextWrapping="Wrap" />
+        </StackPanel>
+        <Border Grid.Column="2" Background="{DynamicResource WpBrandBg}" CornerRadius="12"
+                Padding="15,9" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="W" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource WpBrandText}" />
+            <TextBlock Text="WordPress" FontSize="15" FontWeight="SemiBold"
+                       Foreground="{DynamicResource WpBrandText}" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <TextBlock Text="{Binding Title}" FontSize="38" FontWeight="Bold" LineHeight="50"
+                 Foreground="{DynamicResource WpTextPrimary}" TextWrapping="Wrap" />
+
+      <StackPanel Orientation="Horizontal" Spacing="9" IsVisible="{Binding HasPublishedDate}">
+        <Path Data="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
+              Fill="{DynamicResource WpTextMuted}" Stretch="Uniform" Width="17" Height="17"
+              VerticalAlignment="Center" />
+        <TextBlock Text="{Binding PublishedDateText}" FontSize="15" Foreground="{DynamicResource WpTextMuted}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+
+      <Border CornerRadius="18" Background="{DynamicResource WpMediaPlaceholder}"
+              ClipToBounds="True" IsVisible="{Binding HasCover}">
+        <Image Source="{Binding Cover}" MaxHeight="820" Stretch="Uniform" HorizontalAlignment="Center" />
+      </Border>
+
+      <TextBlock Text="{Binding Description}" FontSize="20" LineHeight="32"
+                 Foreground="{DynamicResource WpTextSecondary}" TextWrapping="Wrap" />
+
+      <WrapPanel IsVisible="{Binding HasTags}" ItemSpacing="8" LineSpacing="8">
+        <Border Background="{DynamicResource WpBrandBg}" CornerRadius="10" Padding="12,7">
+          <TextBlock Text="{Binding TagsText}" FontSize="14" FontWeight="SemiBold"
+                     Foreground="{DynamicResource WpBrandText}" TextWrapping="Wrap" />
+        </Border>
+      </WrapPanel>
+    </StackPanel>
+  </Border>
+</UserControl>
