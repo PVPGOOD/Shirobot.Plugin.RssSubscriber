@@ -41,7 +41,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Restore
-        run: dotnet restore .\Shirobot.Plugin.RssSubscriber.sln -p:UsedAvaloniaProducts=
+        run: dotnet restore .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --disable-parallel -p:UsedAvaloniaProducts=
 
       - name: Test
         run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts=
