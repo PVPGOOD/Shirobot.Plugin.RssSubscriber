@@ -64,13 +64,13 @@ jobs:
           }
 
       - name: Restore
-        run: dotnet restore .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --disable-parallel -p:UsedAvaloniaProducts=
+        run: dotnet restore .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --disable-parallel -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts=
 
       - name: Test
-        run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts=
+        run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts=
 
       - name: Publish plugin
-        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts= --output release/Shirobot.Plugin.RssSubscriber -v:minimal
+        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts= --output release/Shirobot.Plugin.RssSubscriber -v:minimal
 
       - name: Package release
         shell: pwsh
