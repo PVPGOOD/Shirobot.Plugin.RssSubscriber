@@ -1,0 +1,123 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag, for example v0.1.3"
+        required: true
+        default: "v0.1.3"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish release package
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Shirobot.Plugin.RssSubscriber
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: Shirobot.Plugin.RssSubscriber
+
+      - name: Checkout ShiroBot SDK source
+        uses: actions/checkout@v4
+        with:
+          repository: ShirokaProject/ShiroBot
+          ref: v0.9.7
+          path: Shirobot
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate release version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tagMatch = [regex]::Match($env:RELEASE_TAG, '^v(?<version>\d+\.\d+\.\d+)$')
+          if (-not $tagMatch.Success) {
+            throw "Release tag must use vMAJOR.MINOR.PATCH format: $env:RELEASE_TAG"
+          }
+
+          $program = Get-Content .\Shirobot.Plugin.RssSubscriber\Program.cs -Raw
+          $pluginMatch = [regex]::Match($program, '(?m)^\s*Version\s*=\s*"(?<version>\d+\.\d+\.\d+)"')
+          if (-not $pluginMatch.Success -or $pluginMatch.Groups['version'].Value -ne $tagMatch.Groups['version'].Value) {
+            throw "Release tag $env:RELEASE_TAG does not match the plugin version in Program.cs."
+          }
+
+      - name: Restore
+        run: dotnet restore .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --disable-parallel -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts=
+
+      - name: Test
+        run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts=
+
+      - name: Publish plugin
+        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -m:1 -p:BuildInParallel=false -p:UsedAvaloniaProducts= --output release/publish -v:minimal
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $publishRoot = Join-Path $PWD "release/publish"
+          $packageRoot = Join-Path $PWD "release/package/Shirobot.Plugin.RssSubscriber"
+          $assetsRoot = Join-Path $PWD "release/assets"
+          New-Item -ItemType Directory -Force -Path $packageRoot, $assetsRoot | Out-Null
+
+          foreach ($name in @("Shirobot.Plugin.RssSubscriber.dll", "config.toml")) {
+            $source = Join-Path $publishRoot $name
+            if (-not (Test-Path $source)) {
+              throw "Missing expected package file: $name"
+            }
+            Copy-Item -LiteralPath $source -Destination $packageRoot
+          }
+
+          $sharedNames = @("ShiroBot.SDK.dll", "ShiroBot.Model.QQ.dll")
+          $sharedAssemblies = @(Get-ChildItem $packageRoot -Recurse -File | Where-Object { $_.Name -in $sharedNames })
+          if ($sharedAssemblies.Count -gt 0) {
+            throw "Host shared assemblies must not be released: $($sharedAssemblies.Name -join ', ')"
+          }
+
+          Copy-Item -LiteralPath README.md, LICENSE -Destination $packageRoot
+          $expectedFiles = @("Shirobot.Plugin.RssSubscriber.dll", "config.toml", "README.md", "LICENSE")
+          $packageFiles = @(Get-ChildItem $packageRoot -File | Select-Object -ExpandProperty Name | Sort-Object)
+          $expectedFiles = @($expectedFiles | Sort-Object)
+          if (($packageFiles -join "|") -ne ($expectedFiles -join "|")) {
+            throw "Release package has unexpected files: $($packageFiles -join ', ')"
+          }
+
+          Copy-Item -LiteralPath (Join-Path $packageRoot "Shirobot.Plugin.RssSubscriber.dll") -Destination $assetsRoot
+          Copy-Item -LiteralPath (Join-Path $packageRoot "config.toml") -Destination $assetsRoot
+          $zipPath = Join-Path $PWD "release/Shirobot.Plugin.RssSubscriber.zip"
+          Compress-Archive -Path $packageRoot -DestinationPath $zipPath -Force
+          if ((Get-Item $zipPath).Length -gt 99MB) {
+            throw "Marketplace packages must be smaller than 100 MiB."
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            Shirobot.Plugin.RssSubscriber/release/Shirobot.Plugin.RssSubscriber.zip
+            Shirobot.Plugin.RssSubscriber/release/assets/Shirobot.Plugin.RssSubscriber.dll
+            Shirobot.Plugin.RssSubscriber/release/assets/config.toml
