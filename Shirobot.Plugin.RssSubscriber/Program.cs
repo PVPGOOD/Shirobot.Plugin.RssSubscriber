@@ -1,28 +1,36 @@
 using Shirobot.Plugin.RssSubscriber.Commands;
 using Shirobot.Plugin.RssSubscriber.Config;
 using Shirobot.Plugin.RssSubscriber.Feeds;
+using Shirobot.Plugin.RssSubscriber.Presentation;
+using Shirobot.Plugin.RssSubscriber.Presentation.Bilibili;
 using Shirobot.Plugin.RssSubscriber.Scheduler;
+using Shirobot.Plugin.RssSubscriber.Sources;
 using Shirobot.Plugin.RssSubscriber.Storage;
 using Shirobot.Plugin.RssSubscriber.Subscriptions;
-using ShiroBot.Model.Common;
-using ShiroBot.SDK.Abstractions;
+using Shirobot.Plugin.RssSubscriber.Workflows;
 using ShiroBot.SDK.Core;
+using ShiroBot.SDK.Models;
 using ShiroBot.SDK.Plugin;
+
+[assembly: ShiroBotApiCompatibility("0.9", "0.9")]
+[assembly: RequiresShiroBotPackage("shirobot.model.qq", MinimumVersion = "0.9.4")]
 
 namespace Shirobot.Plugin.RssSubscriber;
 
 [BotPlugin(
     "Shirobot.Plugin.RssSubscriber",
     Name = "Shirobot.Plugin.RssSubscriber",
-    Version = "1.0.0",
+    Version = "0.1.1",
     Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。",
-    Category = PluginCategory.Integration)]
+    Category = PluginCategory.Integration,
+    SharedAssemblies = "ShiroBot.Model.QQ")]
 public sealed class ShirobotPlugin : PluginBase
 {
     private const string CommandPrefix = "#rss";
 
     private RssPluginConfig _config = new();
     private HttpClient? _httpClient;
+    private HttpClient? _feedHttpClient;
     private RssStateStore? _stateStore;
     private FeedRegistry? _feedRegistry;
     private SubscriptionRegistry? _subscriptionRegistry;
@@ -31,9 +39,20 @@ public sealed class ShirobotPlugin : PluginBase
     private RssPollScheduler? _scheduler;
     private RssCommandHandler? _commandHandler;
     private IDisposable? _configWatcher;
-    private readonly object _reloadLock = new();
+    private readonly SemaphoreSlim _reloadLock = new(1, 1);
 
     public override string Name => "Shirobot.Plugin.RssSubscriber";
+
+    protected override void ConfigureRoutes()
+    {
+        DirectCommands.MapPrefix(CommandPrefix, HandleDirectAsync);
+        GroupCommands.MapPrefix(CommandPrefix, HandleGroupAsync);
+        Events.Map<MessageEvent>(message =>
+        {
+            _dispatcher?.RegisterIncoming(message);
+            return Task.CompletedTask;
+        });
+    }
 
     protected override Task LoadAsync()
     {
@@ -44,28 +63,36 @@ public sealed class ShirobotPlugin : PluginBase
 
         var configDirectory = Path.GetDirectoryName(Context.Config.ConfigPath) ?? AppContext.BaseDirectory;
         _stateStore = new RssStateStore(configDirectory);
+        var state = _stateStore.Load();
 
-        _httpClient = new HttpClient
+        _httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _feedHttpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
-            Timeout = TimeSpan.FromSeconds(Math.Clamp(_config.RequestTimeoutSeconds, 5, 600))
+            Timeout = Timeout.InfiniteTimeSpan
         };
 
         _feedRegistry = new FeedRegistry();
         _subscriptionRegistry = new SubscriptionRegistry();
-        var state = _stateStore.Load();
         _feedRegistry.LoadFrom(state.Feeds);
         _subscriptionRegistry.LoadFrom(state.GroupSubs, state.FriendSubs);
 
-        _fetcher = new FeedFetcher(_httpClient, _config);
+        _fetcher = new FeedFetcher(_feedHttpClient, () => _config);
+        var sources = SourceRegistry.CreateDefault();
+        var feedPlatforms = FeedPlatformRegistry.CreateDefault();
         var imageEmbedder = new ImageEmbedder(_httpClient);
-        _dispatcher = new RssDispatcher(Context, _config, imageEmbedder);
+        var cardRenderer = new CardRenderer(Context.Render, sources, CardRecipeRegistry.CreateDefault(feedPlatforms),
+            new CardMediaLoader(_feedHttpClient, () => _config),
+            [new BilibiliVideoDataProvider(_feedHttpClient)], feedPlatforms);
+        _dispatcher = new RssDispatcher(Context, () => _config, imageEmbedder, cardRenderer);
         _scheduler = new RssPollScheduler(
             _feedRegistry,
             _subscriptionRegistry,
             _fetcher,
             _dispatcher,
             _stateStore,
-            () => _config);
+            () => _config,
+            state);
+        var itemWorkflow = new RssItemWorkflow(_scheduler, _feedRegistry, _dispatcher);
 
         _commandHandler = new RssCommandHandler(
             Context,
@@ -73,12 +100,10 @@ public sealed class ShirobotPlugin : PluginBase
             _feedRegistry,
             _subscriptionRegistry,
             _scheduler,
-            _dispatcher,
+            itemWorkflow,
+            sources,
             ReloadAsync,
             SaveConfig);
-
-        FriendCommands.MapPrefix(CommandPrefix, HandleFriendAsync);
-        GroupCommands.MapPrefix(CommandPrefix, HandleGroupAsync);
 
         _scheduler.Start();
 
@@ -87,11 +112,6 @@ public sealed class ShirobotPlugin : PluginBase
             _configWatcher = Context.Config.Watch<RssPluginConfig>(updated =>
             {
                 _config = updated;
-                if (_httpClient is not null)
-                {
-                    _httpClient.Timeout = TimeSpan.FromSeconds(Math.Clamp(_config.RequestTimeoutSeconds, 5, 600));
-                }
-
                 BotLog.Info("[Rss] 配置已热重载。");
             });
         }
@@ -115,46 +135,65 @@ public sealed class ShirobotPlugin : PluginBase
 
     protected override async Task OnUnloadAsync()
     {
+        await _reloadLock.WaitAsync();
         try
-        {
-            _configWatcher?.Dispose();
-        }
-        catch
-        {
-        }
-        _configWatcher = null;
-
-        if (_scheduler is not null)
         {
             try
             {
-                _scheduler.PersistSync();
+                _configWatcher?.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
+                BotLog.Warning($"[Rss] 停止配置 watch 失败: {ex.GetType().Name}: {ex.Message}");
+            }
+            _configWatcher = null;
+            _commandHandler = null;
+
+            if (_scheduler is not null)
+            {
+                if (await _scheduler.StopAsync())
+                {
+                    try
+                    {
+                        _scheduler.PersistSync();
+                    }
+                    catch (Exception ex)
+                    {
+                        BotLog.Error($"[Rss] 卸载时保存状态失败: {ex}");
+                    }
+                    _scheduler.Dispose();
+                    _scheduler = null;
+                }
+                else
+                {
+                    BotLog.Warning("[Rss] 有检查任务未结束，本次卸载跳过最终保存和资源释放，避免写入过期状态。");
+                    return;
+                }
             }
 
-            await _scheduler.StopAsync();
-            _scheduler.Dispose();
-            _scheduler = null;
+            _httpClient?.Dispose();
+            _httpClient = null;
+            _feedHttpClient?.Dispose();
+            _feedHttpClient = null;
+            BotLog.Info("[Rss] 已卸载。");
         }
-
-        _httpClient?.Dispose();
-        _httpClient = null;
-        BotLog.Info("[Rss] 已卸载。");
+        finally
+        {
+            _reloadLock.Release();
+        }
     }
 
-    private Task HandleFriendAsync(FriendIncomingMessage message)
+    private Task HandleDirectAsync(MessageEvent message)
     {
         if (!_config.Enabled || _commandHandler is null)
         {
             return Task.CompletedTask;
         }
 
-        return _commandHandler.HandleFriendAsync(message);
+        return _commandHandler.HandleDirectAsync(message);
     }
 
-    private Task HandleGroupAsync(GroupIncomingMessage message)
+    private Task HandleGroupAsync(MessageEvent message)
     {
         if (!_config.Enabled || _commandHandler is null)
         {
@@ -166,35 +205,43 @@ public sealed class ShirobotPlugin : PluginBase
 
     private async Task ReloadAsync()
     {
-        if (_stateStore is null || _feedRegistry is null || _subscriptionRegistry is null)
+        if (_stateStore is null || _feedRegistry is null || _subscriptionRegistry is null || _scheduler is null)
         {
             return;
         }
 
-        await Task.Yield();
-        lock (_reloadLock)
+        await _reloadLock.WaitAsync();
+        try
         {
-            _config = Context.Config.Load<RssPluginConfig>();
-            if (_httpClient is not null)
-            {
-                _httpClient.Timeout = TimeSpan.FromSeconds(Math.Clamp(_config.RequestTimeoutSeconds, 5, 600));
-            }
+            if (!await _scheduler.StopAsync())
+                throw new TimeoutException("RSS 检查任务仍在运行，稍后再执行 reload。");
 
-            var state = _stateStore.Load();
-            _feedRegistry.LoadFrom(state.Feeds);
-            _subscriptionRegistry.LoadFrom(state.GroupSubs, state.FriendSubs);
+            try
+            {
+                var config = Context.Config.Load<RssPluginConfig>();
+                var state = _stateStore.Load();
+                _feedRegistry.LoadFrom(state.Feeds);
+                _subscriptionRegistry.LoadFrom(state.GroupSubs, state.FriendSubs);
+                _scheduler.LoadDeliveryReceipts(state.DeliveryReceipts);
+                _scheduler.ResetStartupBaselines(state.Feeds.Keys);
+                _config = config;
+            }
+            finally
+            {
+                _scheduler.Start();
+            }
+        }
+        finally
+        {
+            _reloadLock.Release();
         }
 
-        BotLog.Info("[Rss] reload 完成。");
+        BotLog.Info("[Rss] reload 完成，订阅和运行状态已加载并重新建立基线。");
     }
 
     private void SaveConfig(RssPluginConfig updated)
     {
         _config = updated;
         Context.Config.Save(_config);
-        if (_httpClient is not null)
-        {
-            _httpClient.Timeout = TimeSpan.FromSeconds(Math.Clamp(_config.RequestTimeoutSeconds, 5, 600));
-        }
     }
 }

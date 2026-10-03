@@ -7,9 +7,9 @@ public static class BackoffPolicy
 {
     public static TimeSpan EffectiveInterval(FeedSource feed, RssPluginConfig config)
     {
-        var baseInterval = Math.Max(
+        var baseInterval = Math.Max(1, Math.Max(
             config.MinIntervalSeconds,
-            feed.IntervalSeconds ?? config.DefaultIntervalSeconds);
+            feed.IntervalSeconds ?? config.DefaultIntervalSeconds));
 
         if (feed.ConsecutiveFailures <= 0)
         {
@@ -17,7 +17,8 @@ public static class BackoffPolicy
         }
 
         var backoffMultiplier = Math.Min(1L << Math.Min(feed.ConsecutiveFailures, 10), 1024);
-        var seconds = Math.Min((long)baseInterval * backoffMultiplier, config.BackoffMaxSeconds);
+        var seconds = Math.Min((long)baseInterval * backoffMultiplier,
+            Math.Max(baseInterval, config.BackoffMaxSeconds));
         return TimeSpan.FromSeconds(seconds);
     }
 

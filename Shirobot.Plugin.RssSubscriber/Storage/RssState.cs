@@ -4,9 +4,6 @@ namespace Shirobot.Plugin.RssSubscriber.Storage;
 
 public sealed class RssState
 {
-    [JsonPropertyName("version")]
-    public int Version { get; set; } = 1;
-
     [JsonPropertyName("feeds")]
     public Dictionary<string, PersistentFeed> Feeds { get; set; } = new();
 
@@ -15,6 +12,9 @@ public sealed class RssState
 
     [JsonPropertyName("friendSubs")]
     public Dictionary<string, List<string>> FriendSubs { get; set; } = new();
+
+    [JsonPropertyName("deliveryReceipts")]
+    public Dictionary<string, Dictionary<string, List<string>>> DeliveryReceipts { get; set; } = new();
 }
 
 public sealed class PersistentFeed
@@ -22,8 +22,17 @@ public sealed class PersistentFeed
     [JsonPropertyName("url")]
     public string Url { get; set; } = string.Empty;
 
+    [JsonPropertyName("sourceId")]
+    public string? SourceId { get; set; }
+
     [JsonPropertyName("displayName")]
     public string? DisplayName { get; set; }
+
+    [JsonPropertyName("feedImageUrl")]
+    public string? FeedImageUrl { get; set; }
+
+    [JsonPropertyName("generator")]
+    public string? Generator { get; set; }
 
     [JsonPropertyName("intervalSec")]
     public int? IntervalSeconds { get; set; }
@@ -33,6 +42,12 @@ public sealed class PersistentFeed
 
     [JsonPropertyName("lastFetchAt")]
     public DateTimeOffset? LastFetchAt { get; set; }
+
+    [JsonPropertyName("etag")]
+    public string? ETag { get; set; }
+
+    [JsonPropertyName("lastModified")]
+    public DateTimeOffset? LastModified { get; set; }
 
     [JsonPropertyName("consecutiveFailures")]
     public int ConsecutiveFailures { get; set; }

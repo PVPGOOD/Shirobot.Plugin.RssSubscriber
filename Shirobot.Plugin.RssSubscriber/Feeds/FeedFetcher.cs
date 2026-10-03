@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Xml;
 using System.Xml.Linq;
 using Shirobot.Plugin.RssSubscriber.Config;
@@ -23,84 +25,173 @@ public sealed class FeedFetcher
     };
 
     private readonly HttpClient _httpClient;
-    private readonly RssPluginConfig _config;
+    private readonly Func<RssPluginConfig> _configAccessor;
+    private RssPluginConfig Config => _configAccessor();
 
-    public FeedFetcher(HttpClient httpClient, RssPluginConfig config)
+    public FeedFetcher(HttpClient httpClient, Func<RssPluginConfig> configAccessor)
     {
         _httpClient = httpClient;
-        _config = config;
+        _configAccessor = configAccessor;
     }
 
-    public async Task<FeedFetchResult> FetchAsync(string url, CancellationToken cancellationToken)
+    public Task<FeedFetchResult> FetchAsync(string url, CancellationToken cancellationToken) =>
+        FetchAsync(url, null, null, cancellationToken);
+
+    public async Task<FeedFetchResult> FetchAsync(
+        string url, string? etag, DateTimeOffset? lastModified, CancellationToken cancellationToken)
     {
-        if (!UrlSafetyGuard.IsAllowed(url, _config.AllowPrivateUrls, out var reason))
-        {
-            throw new InvalidOperationException(reason);
-        }
+        var config = Config;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(config.RequestTimeoutSeconds, 5, 600)));
+        var requestToken = timeout.Token;
+        var stage = "URL/DNS 检查";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        if (!string.IsNullOrWhiteSpace(_config.UserAgent))
-        {
-            request.Headers.UserAgent.ParseAdd(_config.UserAgent);
-        }
-
-        request.Headers.Accept.ParseAdd("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5");
-
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-
-        var settings = new XmlReaderSettings
-        {
-            DtdProcessing = DtdProcessing.Ignore,
-            IgnoreComments = true,
-            IgnoreWhitespace = true,
-            CloseInput = false,
-            Async = false
-        };
-
-        XDocument document;
         try
         {
-            using var xmlReader = XmlReader.Create(stream, settings);
-            document = XDocument.Load(xmlReader, LoadOptions.None);
+            var fetched = await SendFollowingRedirectsAsync(
+                url, etag, lastModified, config, requestToken, value => stage = value);
+            using var response = fetched.Response;
+            var finalUrl = fetched.FinalUrl;
+            var responseEtag = response.Headers.ETag?.ToString();
+            var responseLastModified = response.Content.Headers.LastModified;
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+                return new FeedFetchResult(null, [])
+                {
+                    NotModified = true,
+                    ETag = responseEtag,
+                    LastModified = responseLastModified
+                };
+
+            stage = "响应读取";
+            await using var stream = await response.Content.ReadAsStreamAsync(requestToken);
+
+            var settings = new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Ignore,
+                IgnoreComments = true,
+                IgnoreWhitespace = true,
+                CloseInput = false,
+                Async = true
+            };
+
+            XDocument document;
+            try
+            {
+                stage = "XML 解析";
+                using var xmlReader = XmlReader.Create(stream, settings);
+                document = await XDocument.LoadAsync(xmlReader, LoadOptions.None, requestToken);
+            }
+            catch (XmlException ex)
+            {
+                throw new InvalidOperationException($"解析 RSS/Atom 失败: {ex.Message}", ex);
+            }
+
+            var root = document.Root;
+            stage = "条目解析";
+            if (root is null)
+            {
+                return new FeedFetchResult(null, Array.Empty<FeedItem>());
+            }
+
+            if (string.Equals(root.Name.LocalName, "rss", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(root.Name.LocalName, "RDF", StringComparison.OrdinalIgnoreCase))
+            {
+                var channel = root
+                    .Descendants()
+                    .FirstOrDefault(e => string.Equals(e.Name.LocalName, "channel", StringComparison.OrdinalIgnoreCase));
+                var channelTitle = channel?
+                    .Elements()
+                    .FirstOrDefault(e => string.Equals(e.Name.LocalName, "title", StringComparison.OrdinalIgnoreCase))
+                    ?.Value?.Trim();
+                var generator = channel?
+                    .Elements()
+                    .FirstOrDefault(e => string.Equals(e.Name.LocalName, "generator", StringComparison.OrdinalIgnoreCase))
+                    ?.Value?.Trim();
+                var imageUrl = channel?
+                    .Elements()
+                    .FirstOrDefault(e => string.Equals(e.Name.LocalName, "image", StringComparison.OrdinalIgnoreCase))?
+                    .Elements()
+                    .FirstOrDefault(e => string.Equals(e.Name.LocalName, "url", StringComparison.OrdinalIgnoreCase))?
+                    .Value;
+
+                return new FeedFetchResult(NormalizeTitle(channelTitle), ParseRss(root, finalUrl))
+                {
+                    Generator = generator,
+                    FeedImageUrl = ResolveFeedImageUrl(imageUrl, finalUrl),
+                    ETag = responseEtag,
+                    LastModified = responseLastModified
+                };
+            }
+
+            if (string.Equals(root.Name.LocalName, "feed", StringComparison.OrdinalIgnoreCase))
+            {
+                var feedTitle = root.Element(AtomNs + "title")?.Value?.Trim();
+                var generator = root.Element(AtomNs + "generator")?.Value?.Trim();
+                return new FeedFetchResult(NormalizeTitle(feedTitle), ParseAtom(root, finalUrl))
+                {
+                    Generator = generator,
+                    FeedImageUrl = ResolveFeedImageUrl(
+                        root.Element(AtomNs + "icon")?.Value ?? root.Element(AtomNs + "logo")?.Value,
+                        finalUrl),
+                    ETag = responseEtag,
+                    LastModified = responseLastModified
+                };
+            }
+
+            throw new InvalidOperationException($"未知的 RSS/Atom 根节点: {root.Name}");
         }
-        catch (XmlException ex)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
         {
-            throw new InvalidOperationException($"解析 RSS/Atom 失败: {ex.Message}", ex);
+            throw new TimeoutException($"RSS 抓取在{stage}阶段超过 {Math.Clamp(config.RequestTimeoutSeconds, 5, 600)} 秒。", ex);
         }
+    }
 
-        var root = document.Root;
-        if (root is null)
+    private async Task<(HttpResponseMessage Response, string FinalUrl)> SendFollowingRedirectsAsync(
+        string url, string? etag, DateTimeOffset? lastModified,
+        RssPluginConfig config, CancellationToken cancellationToken, Action<string> setStage)
+    {
+        var currentUrl = url;
+        for (var redirects = 0; redirects <= 5; redirects++)
         {
-            return new FeedFetchResult(null, Array.Empty<FeedItem>());
+            setStage("URL/DNS 检查");
+            var safety = await UrlSafetyGuard.CheckAsync(currentUrl, config.AllowPrivateUrls, cancellationToken);
+            if (!safety.Allowed)
+                throw new InvalidOperationException(safety.Reason);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, currentUrl);
+            if (!string.IsNullOrWhiteSpace(config.UserAgent))
+                request.Headers.UserAgent.ParseAdd(config.UserAgent);
+            request.Headers.Accept.ParseAdd("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5");
+            if (EntityTagHeaderValue.TryParse(etag, out var parsedEtag))
+                request.Headers.IfNoneMatch.Add(parsedEtag);
+            if (lastModified is not null)
+                request.Headers.IfModifiedSince = lastModified;
+
+            setStage("HTTP 请求");
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308 &&
+                response.Headers.Location is { } location)
+            {
+                response.Dispose();
+                if (redirects == 5)
+                    throw new InvalidOperationException("RSS 源重定向超过 5 次。");
+                currentUrl = new Uri(new Uri(currentUrl), location).ToString();
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotModified)
+            {
+                var error = new HttpRequestException(
+                    $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}", null, response.StatusCode);
+                response.Dispose();
+                throw error;
+            }
+
+            return (response, currentUrl);
         }
 
-        if (string.Equals(root.Name.LocalName, "rss", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(root.Name.LocalName, "RDF", StringComparison.OrdinalIgnoreCase))
-        {
-            var channelTitle = root
-                .Descendants()
-                .FirstOrDefault(e => string.Equals(e.Name.LocalName, "channel", StringComparison.OrdinalIgnoreCase))
-                ?.Elements()
-                .FirstOrDefault(e => string.Equals(e.Name.LocalName, "title", StringComparison.OrdinalIgnoreCase))
-                ?.Value
-                ?.Trim();
-
-            return new FeedFetchResult(NormalizeTitle(channelTitle), ParseRss(root, url));
-        }
-
-        if (string.Equals(root.Name.LocalName, "feed", StringComparison.OrdinalIgnoreCase))
-        {
-            var feedTitle = root.Element(AtomNs + "title")?.Value?.Trim();
-            return new FeedFetchResult(NormalizeTitle(feedTitle), ParseAtom(root, url));
-        }
-
-        throw new InvalidOperationException($"未知的 RSS/Atom 根节点: {root.Name}");
+        throw new InvalidOperationException("RSS 源重定向超过 5 次。");
     }
 
     private static string? NormalizeTitle(string? raw)
@@ -151,10 +242,14 @@ public sealed class FeedFetcher
                     : titleRaw + "|" + (publishedRaw ?? string.Empty);
 
             var title = HtmlSanitizer.Strip(titleRaw, 0);
-            var safeDescription = HtmlSanitizer.Strip(rich, _config.MaxDescriptionLength);
+            var safeDescription = HtmlSanitizer.Strip(rich, Config.MaxDescriptionLength);
+            var fullDescription = HtmlSanitizer.StripFormattedText(rich);
             var firstImage = HtmlSanitizer.FindFirstImage(rich, resolvedLink);
 
-            items.Add(new FeedItem(id, title, resolvedLink, safeDescription, published, categories, firstImage));
+            items.Add(new FeedItem(id, title, resolvedLink, safeDescription, published, categories, firstImage)
+            {
+                FullDescription = fullDescription
+            });
         }
 
         return items;
@@ -198,10 +293,14 @@ public sealed class FeedFetcher
                     : titleRaw + "|" + (updated ?? string.Empty);
 
             var title = HtmlSanitizer.Strip(titleRaw, 0);
-            var safeDescription = HtmlSanitizer.Strip(rich, _config.MaxDescriptionLength);
+            var safeDescription = HtmlSanitizer.Strip(rich, Config.MaxDescriptionLength);
+            var fullDescription = HtmlSanitizer.StripFormattedText(rich);
             var firstImage = HtmlSanitizer.FindFirstImage(rich, resolvedLink);
 
-            items.Add(new FeedItem(effectiveId, title, resolvedLink, safeDescription, published, categories, firstImage));
+            items.Add(new FeedItem(effectiveId, title, resolvedLink, safeDescription, published, categories, firstImage)
+            {
+                FullDescription = fullDescription
+            });
         }
 
         return items;
@@ -255,5 +354,14 @@ public sealed class FeedFetcher
         }
 
         return url;
+    }
+
+    private static string? ResolveFeedImageUrl(string? value, string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var resolved = ResolveUrl(value.Trim(), baseUrl);
+        return Uri.TryCreate(resolved, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? uri.AbsoluteUri
+            : null;
     }
 }

@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.Bilibili.ArticleCard">
+  <Border Width="760" Background="#FFF7F8" CornerRadius="28" Padding="32">
+    <Border Background="White" CornerRadius="20" Padding="26" BoxShadow="0 6 20 0 #081E293B">
+      <StackPanel Spacing="18">
+        <TextBlock Text="Bilibili · 专栏" FontSize="16" FontWeight="Bold" Foreground="#F43F5E" />
+        <TextBlock Text="{Binding Title}" FontSize="25" FontWeight="Bold" Foreground="#1E293B" TextWrapping="Wrap" />
+        <Image Source="{Binding Cover}" Height="300" Stretch="UniformToFill" IsVisible="{Binding HasCover}" />
+        <TextBlock Text="{Binding Description}" FontSize="15" Foreground="#475569" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding TagsText}" FontSize="12" Foreground="#E11D48" />
+        <TextBlock Text="{Binding FeedName}" FontSize="13" Foreground="#64748B" />
+        <TextBlock Text="{Binding PublishedText}" FontSize="12" Foreground="#94A3B8" />
+      </StackPanel>
+    </Border>
+  </Border>
+</UserControl>

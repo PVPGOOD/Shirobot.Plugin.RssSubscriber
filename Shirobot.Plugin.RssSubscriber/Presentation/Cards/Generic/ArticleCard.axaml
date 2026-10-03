@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.Generic.ArticleCard">
+  <Border Width="920" Background="{DynamicResource M3CardBg}"
+          BorderBrush="{DynamicResource M3CardBorder}" BorderThickness="1"
+          CornerRadius="24" Padding="32" ClipToBounds="True">
+    <Border.Resources>
+      <ResourceDictionary>
+        <ResourceDictionary.ThemeDictionaries>
+          <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="M3CardBg" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="M3CardBorder" Color="#E7E0EC" />
+            <SolidColorBrush x:Key="M3TextPrimary" Color="#1D1B20" />
+            <SolidColorBrush x:Key="M3TextSecondary" Color="#49454F" />
+            <SolidColorBrush x:Key="M3TextMuted" Color="#79747E" />
+            <SolidColorBrush x:Key="M3AvatarBg" Color="#E6E0E9" />
+            <SolidColorBrush x:Key="M3AvatarIcon" Color="#49454F" />
+            <SolidColorBrush x:Key="M3AccentBg" Color="#ECE6F0" />
+            <SolidColorBrush x:Key="M3AccentText" Color="#49454F" />
+            <SolidColorBrush x:Key="M3MediaPlaceholder" Color="#E6E0E9" />
+          </ResourceDictionary>
+          <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="M3CardBg" Color="#1D1B20" />
+            <SolidColorBrush x:Key="M3CardBorder" Color="#49454F" />
+            <SolidColorBrush x:Key="M3TextPrimary" Color="#E6E0E9" />
+            <SolidColorBrush x:Key="M3TextSecondary" Color="#CAC4D0" />
+            <SolidColorBrush x:Key="M3TextMuted" Color="#938F99" />
+            <SolidColorBrush x:Key="M3AvatarBg" Color="#36343B" />
+            <SolidColorBrush x:Key="M3AvatarIcon" Color="#CAC4D0" />
+            <SolidColorBrush x:Key="M3AccentBg" Color="#2B2930" />
+            <SolidColorBrush x:Key="M3AccentText" Color="#E6E0E9" />
+            <SolidColorBrush x:Key="M3MediaPlaceholder" Color="#2B2930" />
+          </ResourceDictionary>
+        </ResourceDictionary.ThemeDictionaries>
+      </ResourceDictionary>
+    </Border.Resources>
+
+    <StackPanel Spacing="22">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Width="76" Height="76" CornerRadius="38" Background="{DynamicResource M3AvatarBg}"
+                ClipToBounds="True" IsVisible="{Binding HasAvatar}">
+          <Image Source="{Binding Avatar}" Stretch="UniformToFill" />
+        </Border>
+        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Spacing="4">
+          <TextBlock Text="{Binding FeedName}" FontSize="21" FontWeight="SemiBold"
+                     Foreground="{DynamicResource M3TextPrimary}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding SitePlatformName}" FontSize="14" Foreground="{DynamicResource M3TextMuted}" />
+        </StackPanel>
+        <Border Grid.Column="2" Background="{DynamicResource M3AccentBg}" CornerRadius="10"
+                Padding="12,7" VerticalAlignment="Center">
+          <TextBlock Text="RSS" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource M3AccentText}" />
+        </Border>
+      </Grid>
+
+      <TextBlock Text="{Binding Title}" FontSize="36" FontWeight="Bold"
+                 Foreground="{DynamicResource M3TextPrimary}" TextWrapping="Wrap" LineHeight="46" />
+
+      <Border CornerRadius="18" Background="{DynamicResource M3MediaPlaceholder}"
+              ClipToBounds="True" IsVisible="{Binding HasCover}">
+        <Image Source="{Binding Cover}" MaxHeight="820" Stretch="Uniform" HorizontalAlignment="Center" />
+      </Border>
+
+      <TextBlock Text="{Binding Description}" FontSize="20" LineHeight="32"
+                 Foreground="{DynamicResource M3TextSecondary}" TextWrapping="Wrap" />
+
+      <WrapPanel IsVisible="{Binding HasTags}" ItemSpacing="8" LineSpacing="8">
+        <Border Background="{DynamicResource M3AccentBg}" CornerRadius="10" Padding="11,6">
+          <TextBlock Text="{Binding TagsText}" FontSize="13" FontWeight="SemiBold"
+                     Foreground="{DynamicResource M3AccentText}" TextWrapping="Wrap" />
+        </Border>
+      </WrapPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

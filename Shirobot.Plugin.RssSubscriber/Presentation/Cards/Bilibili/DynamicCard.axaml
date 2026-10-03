@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.Bilibili.DynamicCard">
+  <Border Width="760" Background="#FFF7F8" CornerRadius="28" Padding="32">
+    <Border Background="White" CornerRadius="20" Padding="26" BoxShadow="0 6 20 0 #081E293B">
+      <StackPanel Spacing="18">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Text="Bilibili · 动态" FontSize="16" FontWeight="Bold" Foreground="#F43F5E" />
+          <TextBlock Grid.Column="1" Text="{Binding PublishedText}" FontSize="12" Foreground="#94A3B8" />
+        </Grid>
+        <TextBlock Text="{Binding FeedName}" FontSize="14" FontWeight="SemiBold" Foreground="#334155" />
+        <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#1E293B" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Description}" FontSize="16" Foreground="#475569" TextWrapping="Wrap" />
+        <Image Source="{Binding Cover}" Height="300" Stretch="UniformToFill" IsVisible="{Binding HasCover}" />
+        <TextBlock Text="{Binding TagsText}" FontSize="12" Foreground="#E11D48" />
+      </StackPanel>
+    </Border>
+  </Border>
+</UserControl>

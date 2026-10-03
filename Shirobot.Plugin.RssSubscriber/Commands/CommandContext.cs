@@ -1,46 +1,35 @@
 using Shirobot.Plugin.RssSubscriber.Subscriptions;
-using ShiroBot.Model.Common;
-using ShiroBot.SDK.Plugin;
+using ShiroBot.SDK.Models;
 
 namespace Shirobot.Plugin.RssSubscriber.Commands;
 
 public sealed class CommandContext
 {
     public CommandContext(
-        IBotContext bot,
+        MessageEvent sourceMessage,
         SubscriberKey scope,
-        long senderId,
+        string senderId,
         bool isAdminScope,
-        bool isGroup,
-        long? groupId,
-        Func<string, IEnumerable<OutgoingSegment>?, Task> replyAsync,
-        Func<bool, string, IEnumerable<OutgoingSegment>?, Task> replyMentionAsync,
-        Func<OutgoingSegment[], Task> sendSegmentsAsync)
+        Func<string, IEnumerable<MessageSegment>?, Task> replyAsync,
+        Func<bool, string, IEnumerable<MessageSegment>?, Task> replyMentionAsync)
     {
-        Bot = bot;
+        SourceMessage = sourceMessage;
         Scope = scope;
         SenderId = senderId;
         IsAdminScope = isAdminScope;
-        IsGroup = isGroup;
-        GroupId = groupId;
         ReplyAsync = replyAsync;
         ReplyMentionAsync = replyMentionAsync;
-        SendSegmentsAsync = sendSegmentsAsync;
     }
 
-    public IBotContext Bot { get; }
+    public MessageEvent SourceMessage { get; }
     public SubscriberKey Scope { get; }
-    public long SenderId { get; }
+    public string SenderId { get; }
     public bool IsAdminScope { get; }
-    public bool IsGroup { get; }
-    public long? GroupId { get; }
 
     /// <summary>普通文本回复，不带 @。</summary>
-    public Func<string, IEnumerable<OutgoingSegment>?, Task> ReplyAsync { get; }
+    public Func<string, IEnumerable<MessageSegment>?, Task> ReplyAsync { get; }
 
     /// <summary>群里第一参数 mention=true 时会前置 @ 操作者；私聊一律不 @。</summary>
-    public Func<bool, string, IEnumerable<OutgoingSegment>?, Task> ReplyMentionAsync { get; }
+    public Func<bool, string, IEnumerable<MessageSegment>?, Task> ReplyMentionAsync { get; }
 
-    /// <summary>直接按已构建好的 segments 发送，常用于推送/latest 复用 dispatcher 的拼装。</summary>
-    public Func<OutgoingSegment[], Task> SendSegmentsAsync { get; }
 }

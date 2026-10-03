@@ -7,4 +7,7 @@ public sealed record FeedItem(
     string Description,
     DateTimeOffset? Published,
     IReadOnlyList<string> Tags,
-    string? FirstImageUrl);
+    string? FirstImageUrl)
+{
+    public string FullDescription { get; init; } = Description;
+}

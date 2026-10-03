@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Shirobot.Plugin.RssSubscriber.Presentation"
+             x:DataType="vm:CardViewModel"
+             x:Class="Shirobot.Plugin.RssSubscriber.Presentation.Cards.Git.GitEventCard">
+  <Border Width="920" Background="White" CornerRadius="22" Padding="34" BoxShadow="0 6 22 0 #081E293B">
+    <StackPanel Spacing="20">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+        <Border Width="44" Height="44" CornerRadius="12" Background="#F1F5F9">
+          <TextBlock Text="&lt;/&gt;" FontSize="17" FontWeight="Bold" Foreground="#334155"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+          <TextBlock Text="{Binding SourceName}" FontSize="18" FontWeight="Bold" Foreground="#1E293B" />
+          <TextBlock Text="{Binding GitRepositoryText}" FontSize="14" Foreground="#64748B" />
+        </StackPanel>
+        <Border Grid.Column="2" Background="#F1F5F9" CornerRadius="10" Padding="11,6"
+                VerticalAlignment="Center">
+          <TextBlock Text="{Binding GitEventTypeText}" FontSize="13" FontWeight="SemiBold" Foreground="#475569" />
+        </Border>
+        <Border Grid.Column="3" Background="#F1F5F9" CornerRadius="10" Padding="11,6"
+                VerticalAlignment="Center" IsVisible="{Binding HasGitStatus}">
+          <TextBlock Text="{Binding GitStatusText}" FontSize="13" FontWeight="Bold" Foreground="#475569" />
+        </Border>
+      </Grid>
+
+      <TextBlock Text="{Binding Title}" FontSize="27" FontWeight="Bold" Foreground="#111827"
+                 TextWrapping="Wrap" LineHeight="36" />
+      <TextBlock Text="{Binding Description}" FontSize="17" Foreground="#475569"
+                 TextWrapping="Wrap" MaxLines="7" TextTrimming="CharacterEllipsis" LineHeight="25" />
+
+      <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+        <TextBlock Text="{Binding GitReferenceText}" FontSize="14" FontFamily="Consolas"
+                   Foreground="#64748B" VerticalAlignment="Center" IsVisible="{Binding HasGitReference}" />
+        <TextBlock Grid.Column="1" Text="{Binding PublishedText}" FontSize="13" Foreground="#94A3B8"
+                   VerticalAlignment="Center" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>
