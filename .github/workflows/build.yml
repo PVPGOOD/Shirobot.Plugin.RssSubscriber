@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build RSS Subscriber
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: Shirobot.Plugin.RssSubscriber
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          path: Shirobot.Plugin.RssSubscriber
+
+      - name: Checkout ShiroBot SDK source
+        uses: actions/checkout@v4
+        with:
+          repository: ShirokaProject/ShiroBot
+          ref: v0.9.7
+          path: Shirobot
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\Shirobot.Plugin.RssSubscriber.sln -p:UsedAvaloniaProducts=
+
+      - name: Test
+        run: dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts=
+
+      - name: Publish plugin
+        run: dotnet publish .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj --configuration Release --no-restore -p:UsedAvaloniaProducts= --output artifacts/plugin -v:minimal
+
+      - name: Verify package layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageRoot = Join-Path $PWD "artifacts/plugin"
+          foreach ($name in @("Shirobot.Plugin.RssSubscriber.dll", "config.toml")) {
+            if (-not (Test-Path (Join-Path $packageRoot $name))) {
+              throw "Missing expected package file: $name"
+            }
+          }
+
+          $sharedNames = @("ShiroBot.SDK.dll", "ShiroBot.Model.QQ.dll")
+          $sharedAssemblies = @(Get-ChildItem $packageRoot -Recurse -File | Where-Object { $_.Name -in $sharedNames })
+          if ($sharedAssemblies.Count -gt 0) {
+            throw "Host shared assemblies must not be packaged: $($sharedAssemblies.Name -join ', ')"
+          }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shirobot.Plugin.RssSubscriber
+          if-no-files-found: error
+          path: Shirobot.Plugin.RssSubscriber/artifacts/plugin/**
