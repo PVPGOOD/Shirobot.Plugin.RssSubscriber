@@ -20,7 +20,7 @@ namespace Shirobot.Plugin.RssSubscriber;
 [BotPlugin(
     "Shirobot.Plugin.RssSubscriber",
     Name = "Shirobot.Plugin.RssSubscriber",
-    Version = "0.1.3",
+    Version = "0.2.0",
     Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。",
     Category = PluginCategory.Integration,
     SharedAssemblies = "ShiroBot.Model.QQ")]
