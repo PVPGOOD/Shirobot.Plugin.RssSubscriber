@@ -1,6 +1,6 @@
 # Shirobot.Plugin.RssSubscriber
 
-当前发布：`v0.2.0`。本版本使用 SDK `0.9.8`，需要宿主 `0.9.8` 的新 ABI；旧宿主不兼容。
+当前发布：`v0.2.1`。本版本使用 SDK `0.9.8`，需要宿主 `0.9.8` 的新 ABI；旧宿主不兼容。
 
 Shirobot.Plugin.RssSubscriber 是 ShiroBot 插件生态中的一员，旨在为群聊和私聊提供 RSS / Atom 订阅、更新监测与内容推送，并按适配器实例隔离订阅数据。
 

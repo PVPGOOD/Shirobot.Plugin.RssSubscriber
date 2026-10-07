@@ -19,9 +19,11 @@ namespace Shirobot.Plugin.RssSubscriber;
 
 [BotPlugin(
     "Shirobot.Plugin.RssSubscriber",
-    Name = "Shirobot.Plugin.RssSubscriber",
-    Version = "0.2.0",
+    Name = "RSS 订阅",
+    Version = "0.2.1",
     Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。",
+    Author = "PVPGOOD",
+    GithubRepo = "ShirokaProject/Shirobot.Plugin.RssSubscriber",
     Category = PluginCategory.Integration,
     SharedAssemblies = "ShiroBot.Model.QQ")]
 public sealed class ShirobotPlugin : PluginBase
@@ -41,7 +43,7 @@ public sealed class ShirobotPlugin : PluginBase
     private IDisposable? _configWatcher;
     private readonly SemaphoreSlim _reloadLock = new(1, 1);
 
-    public override string Name => "Shirobot.Plugin.RssSubscriber";
+    public override string Name => "RSS 订阅";
 
     protected override void ConfigureRoutes()
     {
