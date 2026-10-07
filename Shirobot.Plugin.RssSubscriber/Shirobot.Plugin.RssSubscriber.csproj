@@ -7,17 +7,13 @@
     <AssemblyName>Shirobot.Plugin.RssSubscriber</AssemblyName>
     <RootNamespace>Shirobot.Plugin.RssSubscriber</RootNamespace>
     <ShiroBotPluginPackagingEnabled>true</ShiroBotPluginPackagingEnabled>
-    <ShiroBotPluginSharedAssemblies>ShiroBot.Model.QQ</ShiroBotPluginSharedAssemblies>
+    <ShiroBotPluginSharedAssemblies>ShiroBot.Model.QQ;ShiroBot.Model.Discord;ShiroBot.Model.Telegram</ShiroBotPluginSharedAssemblies>
   </PropertyGroup>
-  <Import Project="$(ShiroBotSourceRoot)/SDK/buildTransitive/ShiroBot.SDK.props" />
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.2" />
-    <ProjectReference Include="$(ShiroBotSourceRoot)/SDK/ShiroBot.SDK.csproj" Private="false" />
-    <ProjectReference Include="$(ShiroBotSourceRoot)/Models/QQ/ShiroBot.Model.QQ.csproj" Private="false" />
+    <PackageReference Include="ShiroBot.SDK" Version="0.9.8" />
     <Content Include="Assets\config.toml" CopyToOutputDirectory="PreserveNewest" TargetPath="config.toml" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Shirobot.Plugin.RssSubscriber.Tests" />
   </ItemGroup>
-  <Import Project="$(ShiroBotSourceRoot)/SDK/buildTransitive/ShiroBot.SDK.targets" />
 </Project>

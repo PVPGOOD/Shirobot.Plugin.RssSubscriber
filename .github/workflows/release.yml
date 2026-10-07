@@ -34,13 +34,6 @@ jobs:
           ref: ${{ github.sha }}
           path: Shirobot.Plugin.RssSubscriber
 
-      - name: Checkout ShiroBot SDK source
-        uses: actions/checkout@v4
-        with:
-          repository: ShirokaProject/ShiroBot
-          ref: v0.9.7
-          path: Shirobot
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:

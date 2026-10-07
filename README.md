@@ -24,34 +24,23 @@ Shirobot.Plugin.RssSubscriber 是 ShiroBot 插件生态中的一员，旨在为�
 
 ## 运行要求
 
-- ShiroBot 宿主 v0.9.7 或更高版本。
-- `shirobot.model.qq` 包版本至少为 `0.9.4`。
+- ShiroBot 宿主 v0.9.8 或更高版本。
+- `shirobot.model.qq` 包版本至少为 `0.9.8`。
 - QQ 官方 Markdown 和媒体卡片需要兼容版本的 QQPlatform 适配器。
 
 插件遵循 ShiroBot 的适配器实例和类型化 QQ 消息契约，详见[插件开发文档](https://docs.shiroka.org/plugin/apis)与[API 兼容性说明](https://docs.shiroka.org/plugin/api-compatibility)。
 
 ## 构建
 
-默认从同级 `Shirobot` 源码仓库引用 SDK 和 QQ 模型：
-
-```text
-shirobot-proj/
-├── Shirobot/
-└── Shirobot.Plugin.RssSubscriber/
-```
-
-在插件仓库根目录执行：
+使用 NuGet `ShiroBot.SDK 0.9.8`（包含 SDK、QQ Model 和 Avalonia 渲染契约），无需引用宿主源码：
 
 ```powershell
-dotnet build .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj -c Release
-dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj -c Release
+dotnet restore .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj
+dotnet build .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj -c Release --no-restore
+dotnet test .\tests\Shirobot.Plugin.RssSubscriber.Tests\Shirobot.Plugin.RssSubscriber.Tests.csproj -c Release --no-restore
 ```
 
-SDK 源码位于其他目录时，指定 `ShiroBotSourceRoot`：
-
-```powershell
-dotnet build .\Shirobot.Plugin.RssSubscriber\Shirobot.Plugin.RssSubscriber.csproj -c Release -p:ShiroBotSourceRoot=C:\src\Shirobot
-```
+新版本尚未公开发布时，将本地 `.nupkg` 所在目录添加为 NuGet 源，或向 restore 传入本地源配置 `--configfile <NuGet.config>`。本轮 SDK / QQ Model ABI 均为 1.0.0.0，需配合新宿主与重新构建的适配器。
 
 ## 部署
 

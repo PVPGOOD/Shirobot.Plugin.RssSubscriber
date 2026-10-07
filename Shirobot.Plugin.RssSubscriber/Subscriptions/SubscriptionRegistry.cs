@@ -61,18 +61,21 @@ public sealed class SubscriptionRegistry
     {
         lock (_lock)
         {
+            var migrated = false;
             if (key.InstanceId is not null)
             {
                 var dict = key.Scope == SubscriberScope.Group ? _groupSubs : _friendSubs;
-                if (!dict.ContainsKey(key.StorageKey) && dict.Remove(key.LegacyStorageKey, out var legacyFeeds))
+                if (dict.TryGetValue(key.LegacyStorageKey, out var legacyFeeds) && legacyFeeds.Remove(feedId))
                 {
-                    var instanceFeeds = new HashSet<string>(legacyFeeds, StringComparer.OrdinalIgnoreCase);
-                    dict[key.StorageKey] = instanceFeeds;
+                    // Bind only the feed explicitly selected by this command.
+                    // Other ambiguous legacy subscriptions remain intact.
+                    migrated = true;
+                    if (legacyFeeds.Count == 0) dict.Remove(key.LegacyStorageKey);
                 }
             }
 
             var bucket = GetBucket(key, create: true)!;
-            return bucket.Add(feedId);
+            return bucket.Add(feedId) || migrated;
         }
     }
 
