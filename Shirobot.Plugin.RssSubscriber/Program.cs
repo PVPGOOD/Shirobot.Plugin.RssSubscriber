@@ -1,3 +1,4 @@
+using ShiroBot.SDK.Config;
 using Shirobot.Plugin.RssSubscriber.Commands;
 using Shirobot.Plugin.RssSubscriber.Config;
 using Shirobot.Plugin.RssSubscriber.Feeds;
@@ -20,13 +21,13 @@ namespace Shirobot.Plugin.RssSubscriber;
 [BotPlugin(
     "Shirobot.Plugin.RssSubscriber",
     Name = "RSS 订阅",
-    Version = "0.2.1",
+    Version = "0.2.2",
     Description = "RSS / Atom 订阅推送插件，支持群与私聊隔离。",
     Author = "PVPGOOD",
     GithubRepo = "ShirokaProject/Shirobot.Plugin.RssSubscriber",
     Category = PluginCategory.Integration,
     SharedAssemblies = "ShiroBot.Model.QQ")]
-public sealed class ShirobotPlugin : PluginBase
+public sealed class ShirobotPlugin : PluginBase<RssPluginConfig>
 {
     private const string CommandPrefix = "#rss";
 
@@ -40,10 +41,17 @@ public sealed class ShirobotPlugin : PluginBase
     private RssDispatcher? _dispatcher;
     private RssPollScheduler? _scheduler;
     private RssCommandHandler? _commandHandler;
-    private IDisposable? _configWatcher;
     private readonly SemaphoreSlim _reloadLock = new(1, 1);
 
     public override string Name => "RSS 订阅";
+
+    protected override Task OnConfigChangedAsync(RssPluginConfig previous, RssPluginConfig current, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _config = current;
+        BotLog.Info("[Rss] 配置已热重载。");
+        return Task.CompletedTask;
+    }
 
     protected override void ConfigureRoutes()
     {
@@ -60,7 +68,7 @@ public sealed class ShirobotPlugin : PluginBase
     {
         BotLog.Info("[Rss] 开始初始化。");
 
-        _config = Context.Config.Load<RssPluginConfig>();
+        _config = Settings;
         Context.Config.Save(_config);
 
         var configDirectory = Path.GetDirectoryName(Context.Config.ConfigPath) ?? AppContext.BaseDirectory;
@@ -109,19 +117,6 @@ public sealed class ShirobotPlugin : PluginBase
 
         _scheduler.Start();
 
-        try
-        {
-            _configWatcher = Context.Config.Watch<RssPluginConfig>(updated =>
-            {
-                _config = updated;
-                BotLog.Info("[Rss] 配置已热重载。");
-            });
-        }
-        catch (Exception ex)
-        {
-            BotLog.Warning($"[Rss] 注册配置 watch 失败: {ex.GetType().Name}: {ex.Message}");
-        }
-
         BotLog.Success(
             $"[Rss] 初始化完成。feeds={_feedRegistry.All().Count}, " +
             $"groups={state.GroupSubs.Count}, friends={state.FriendSubs.Count}, " +
@@ -140,15 +135,6 @@ public sealed class ShirobotPlugin : PluginBase
         await _reloadLock.WaitAsync();
         try
         {
-            try
-            {
-                _configWatcher?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                BotLog.Warning($"[Rss] 停止配置 watch 失败: {ex.GetType().Name}: {ex.Message}");
-            }
-            _configWatcher = null;
             _commandHandler = null;
 
             if (_scheduler is not null)
